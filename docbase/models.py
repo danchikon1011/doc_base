@@ -74,6 +74,7 @@ class Document(db.Model):
         back_populates="document",
         order_by="DocumentVersion.version_number.desc()",
         cascade="all, delete-orphan",
+        foreign_keys="DocumentVersion.document_id",
     )
 
     def ensure_slug(self) -> None:
@@ -99,7 +100,11 @@ class DocumentVersion(db.Model):
     comment = db.Column(db.String(255))
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
-    document = db.relationship("Document", back_populates="versions")
+    document = db.relationship(
+        "Document",
+        back_populates="versions",
+        foreign_keys=[document_id],
+    )
     editor = db.relationship("User")
 
     def storage_path(self) -> Optional[Path]:
