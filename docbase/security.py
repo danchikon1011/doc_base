@@ -143,5 +143,10 @@ def logout_user() -> None:
 
 
 def login_required(view_func):
-    manager = _get_manager()
-    return manager.login_required(view_func)
+    @wraps(view_func)
+    def wrapper(*args, **kwargs):
+        manager = _get_manager()
+        protected_view = manager.login_required(view_func)
+        return protected_view(*args, **kwargs)
+
+    return wrapper
