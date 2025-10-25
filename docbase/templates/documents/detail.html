@@ -1,0 +1,59 @@
+{% extends 'base.html' %}
+{% block title %}{{ document.title }} · DocBase{% endblock %}
+{% block content %}
+<div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center mb-4 gap-3">
+  <div>
+    <h1 class="h3 mb-1">{{ document.title }}</h1>
+    <p class="text-muted mb-0">Последнее изменение: {{ (document.updated_at or document.created_at)|datetimeformat }}</p>
+  </div>
+  <div class="btn-group">
+    {% if current_user.is_editor %}
+    <a class="btn btn-outline-primary" href="{{ url_for('documents.edit', slug=document.slug) }}">Редактировать</a>
+    {% endif %}
+    <a class="btn btn-outline-secondary" href="{{ url_for('documents.history', slug=document.slug) }}">История</a>
+    {% if document.current_version.file_path %}
+    <a class="btn btn-outline-success" href="{{ url_for('documents.download', slug=document.slug) }}">Скачать</a>
+    {% endif %}
+  </div>
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-8">
+    <div class="card shadow-sm border-0">
+      <div class="card-body">
+        <h2 class="h5 mb-3">Содержимое</h2>
+        {% if document.current_version %}
+        <article class="document-content">{{ document.current_version.content|urlize }}</article>
+        {% else %}
+        <p class="text-muted">Содержимое отсутствует.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-4">
+    <div class="card shadow-sm border-0 mb-3">
+      <div class="card-body">
+        <h3 class="h6 text-uppercase text-muted">Сводка</h3>
+        <p class="mb-0">{{ document.summary or 'Описание отсутствует' }}</p>
+      </div>
+    </div>
+    <div class="card shadow-sm border-0">
+      <div class="card-body">
+        <h3 class="h6 text-uppercase text-muted">Метаданные</h3>
+        <dl class="row mb-0 small">
+          <dt class="col-5 text-muted">Автор</dt>
+          <dd class="col-7">{{ document.owner.username }}</dd>
+          <dt class="col-5 text-muted">Создан</dt>
+          <dd class="col-7">{{ document.created_at|datetimeformat }}</dd>
+          <dt class="col-5 text-muted">Версия</dt>
+          <dd class="col-7">{{ document.current_version.version_number if document.current_version else '—' }}</dd>
+          {% if document.current_version and document.current_version.comment %}
+          <dt class="col-5 text-muted">Комментарий</dt>
+          <dd class="col-7">{{ document.current_version.comment }}</dd>
+          {% endif %}
+        </dl>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
