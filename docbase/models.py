@@ -57,6 +57,13 @@ def load_user(user_id: str) -> Optional["User"]:
     return User.query.get(int(user_id))
 
 
+class ApprovalState(enum.Enum):
+    DRAFT = "draft"
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
 class Document(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(255), nullable=False)
@@ -66,6 +73,7 @@ class Document(db.Model):
     current_version_id = db.Column(db.Integer, db.ForeignKey("document_version.id"))
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    approval_state = db.Column(db.Enum(ApprovalState), default=ApprovalState.DRAFT, nullable=False)
 
     owner = db.relationship("User", back_populates="documents")
     current_version = db.relationship("DocumentVersion", foreign_keys=[current_version_id], post_update=True)
@@ -75,6 +83,12 @@ class Document(db.Model):
         order_by="DocumentVersion.version_number.desc()",
         cascade="all, delete-orphan",
         foreign_keys="DocumentVersion.document_id",
+    )
+    approvals = db.relationship(
+        "DocumentApproval",
+        back_populates="document",
+        order_by="DocumentApproval.created_at.desc()",
+        cascade="all, delete-orphan",
     )
 
     def ensure_slug(self) -> None:
@@ -88,6 +102,21 @@ class Document(db.Model):
             slug = f"{base_slug}-{counter}"
         self.slug = slug
 
+    @property
+    def approval_label(self) -> str:
+        mapping = {
+            ApprovalState.DRAFT: "Черновик",
+            ApprovalState.PENDING: "На согласовании",
+            ApprovalState.APPROVED: "Согласован",
+            ApprovalState.REJECTED: "Отклонен",
+        }
+        return mapping.get(self.approval_state, self.approval_state.value)
+
+    def reset_approvals(self) -> None:
+        for approval in self.approvals:
+            approval.cancel(reason="Создана новая версия документа")
+        self.approval_state = ApprovalState.DRAFT
+
 
 class DocumentVersion(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -95,6 +124,9 @@ class DocumentVersion(db.Model):
     version_number = db.Column(db.Integer, nullable=False)
     filename = db.Column(db.String(255), nullable=True)
     file_path = db.Column(db.String(500), nullable=True)
+    file_extension = db.Column(db.String(20), nullable=True)
+    mime_type = db.Column(db.String(255), nullable=True)
+    file_size = db.Column(db.Integer, nullable=True)
     content = db.Column(db.Text, nullable=False)
     editor_id = db.Column(db.Integer, db.ForeignKey("user.id"))
     comment = db.Column(db.String(255))
@@ -109,6 +141,77 @@ class DocumentVersion(db.Model):
 
     def storage_path(self) -> Optional[Path]:
         return Path(self.file_path) if self.file_path else None
+
+    @property
+    def is_editable(self) -> bool:
+        if not self.file_extension:
+            return True
+        from .utils import EDITABLE_EXTENSIONS
+
+        return self.file_extension.lower() in EDITABLE_EXTENSIONS
+
+    @property
+    def size_label(self) -> str:
+        if not self.file_size:
+            return "—"
+        size = float(self.file_size)
+        for unit in ["Б", "КБ", "МБ", "ГБ"]:
+            if size < 1024.0:
+                return f"{size:.1f} {unit}"
+            size /= 1024.0
+        return f"{size:.1f} ТБ"
+
+
+class ApprovalDecision(enum.Enum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    CANCELLED = "cancelled"
+
+
+class DocumentApproval(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    document_id = db.Column(db.Integer, db.ForeignKey("document.id"), nullable=False)
+    requested_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    assigned_to_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    status = db.Column(db.Enum(ApprovalDecision), default=ApprovalDecision.PENDING, nullable=False)
+    comment = db.Column(db.String(500))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    decided_at = db.Column(db.DateTime)
+    resolution_note = db.Column(db.String(500))
+
+    document = db.relationship("Document", back_populates="approvals")
+    requested_by = db.relationship("User", foreign_keys=[requested_by_id])
+    assigned_to = db.relationship("User", foreign_keys=[assigned_to_id])
+
+    def approve(self, note: str | None = None) -> None:
+        self.status = ApprovalDecision.APPROVED
+        self.decided_at = datetime.utcnow()
+        if note:
+            self.resolution_note = note
+
+    def reject(self, note: str | None = None) -> None:
+        self.status = ApprovalDecision.REJECTED
+        self.decided_at = datetime.utcnow()
+        if note:
+            self.resolution_note = note
+
+    def cancel(self, reason: str | None = None) -> None:
+        if self.status is ApprovalDecision.PENDING:
+            self.status = ApprovalDecision.CANCELLED
+            self.decided_at = datetime.utcnow()
+            if reason:
+                self.resolution_note = reason
+
+    @property
+    def status_label(self) -> str:
+        mapping = {
+            ApprovalDecision.PENDING: "В ожидании",
+            ApprovalDecision.APPROVED: "Согласовано",
+            ApprovalDecision.REJECTED: "Отклонено",
+            ApprovalDecision.CANCELLED: "Отменено",
+        }
+        return mapping.get(self.status, self.status.value)
 
 
 class SearchIndex(db.Model):

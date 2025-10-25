@@ -64,3 +64,51 @@ body {
 main.container {
   max-width: 1200px;
 }
+
+.bg-status-draft {
+  background-color: #9e9e9e !important;
+}
+
+.bg-status-pending {
+  background-color: #ffb300 !important;
+  color: #212121 !important;
+}
+
+.bg-status-approved {
+  background-color: #43a047 !important;
+}
+
+.bg-status-rejected {
+  background-color: #e53935 !important;
+}
+
+.bg-status-cancelled {
+  background-color: #757575 !important;
+}
+
+.print-view {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+@media print {
+  body {
+    background-color: #fff;
+  }
+  .navbar,
+  .toast-container,
+  .btn {
+    display: none !important;
+  }
+  main.container {
+    max-width: 100%;
+    padding: 0;
+  }
+  .print-view {
+    margin: 0;
+  }
+  .document-content {
+    box-shadow: none !important;
+    border: none !important;
+  }
+}

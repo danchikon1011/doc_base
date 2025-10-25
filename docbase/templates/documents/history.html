@@ -20,7 +20,11 @@
           <span class="text-muted small">{{ version.created_at|datetimeformat }}</span>
         </div>
         <p class="mb-2 text-muted">{{ version.comment or 'Без комментария' }}</p>
-        <p class="mb-0 small">Редактор: {{ version.editor.username if version.editor else 'Неизвестно' }}</p>
+        <p class="mb-1 small">Редактор: {{ version.editor.username if version.editor else 'Неизвестно' }}</p>
+        {% if version.filename %}
+        <p class="mb-1 small text-muted">Файл: {{ version.filename }} · {{ version.size_label }}</p>
+        {% endif %}
+        <p class="mb-0 small text-muted">Формат: {{ version.file_extension|upper if version.file_extension else '—' }}</p>
       </div>
     </div>
   </div>

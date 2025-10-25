@@ -1,3 +1,8 @@
 Flask==2.3.3
 Flask-SQLAlchemy==3.1.1
 Flask-Login==0.6.3
+python-docx==0.8.11
+python-pptx==0.6.23
+openpyxl==3.1.2
+pdfminer.six==20221105
+textract==1.6.5

@@ -6,6 +6,9 @@
     <div class="card shadow-sm border-0">
       <div class="card-body p-4">
         <h1 class="h4 mb-4">Редактирование документа</h1>
+        {% if document.current_version and not document.current_version.is_editable %}
+        <div class="alert alert-warning">Редактирование недоступно для формата {{ document.current_version.file_extension|upper }}. Загрузите новый файл или обратитесь к администратору.</div>
+        {% endif %}
         <form method="post" class="row g-3">
           <div class="col-12">
             <label class="form-label" for="summary">Краткое описание</label>
@@ -13,7 +16,7 @@
           </div>
           <div class="col-12">
             <label class="form-label" for="content">Содержимое</label>
-            <textarea class="form-control" name="content" id="content" rows="12" required>{{ document.current_version.content }}</textarea>
+            <textarea class="form-control" name="content" id="content" rows="12" {% if document.current_version and not document.current_version.is_editable %}disabled{% else %}required{% endif %}>{{ document.current_version.content }}</textarea>
           </div>
           <div class="col-12">
             <label class="form-label" for="comment">Комментарий к версии</label>
@@ -21,7 +24,7 @@
           </div>
           <div class="col-12 text-end">
             <a class="btn btn-outline-secondary" href="{{ url_for('documents.detail', slug=document.slug) }}">Отмена</a>
-            <button class="btn btn-primary" type="submit">Сохранить изменения</button>
+            <button class="btn btn-primary" type="submit" {% if document.current_version and not document.current_version.is_editable %}disabled{% endif %}>Сохранить изменения</button>
           </div>
         </form>
       </div>
