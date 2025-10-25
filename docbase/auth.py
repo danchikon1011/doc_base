@@ -4,7 +4,6 @@ from flask import Blueprint, flash, redirect, render_template, request, url_for
 
 from .security import current_user, login_required, login_user, logout_user
 
-from .extensions import db
 from .models import Role, User
 
 bp = Blueprint("auth", __name__, url_prefix="/auth")
@@ -18,7 +17,7 @@ def login():
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
         remember = bool(request.form.get("remember"))
-        user = User.query.filter_by(username=username).first()
+        user = User.get_by_username(username)
         if user and user.check_password(password):
             login_user(user, remember=remember)
             flash("Добро пожаловать назад!", "success")
@@ -49,14 +48,11 @@ def register():
         role_name = request.form.get("role", Role.VIEWER.value)
         if not username or not password:
             flash("Имя пользователя и пароль обязательны", "danger")
-        elif User.query.filter_by(username=username).first():
+        elif User.get_by_username(username):
             flash("Пользователь с таким именем уже существует", "danger")
         else:
             role = Role(role_name)
-            user = User(username=username, role=role)
-            user.set_password(password)
-            db.session.add(user)
-            db.session.commit()
+            User.create(username=username, password=password, role=role)
             flash("Пользователь успешно создан", "success")
             return redirect(url_for("auth.login"))
     role_labels = {

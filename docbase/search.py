@@ -40,20 +40,23 @@ def search_documents():
 
     if query:
         query_tokens = tokenize(query)
-        for entry in SearchIndex.query.all():
+        for entry in SearchIndex.all():
             score = score_document(query_tokens, entry.content)
             if score > 0:
-                document = Document.query.get(entry.document_id)
+                document = Document.get(entry.document_id)
                 if document:
+                    document = document.attach_related()
                     results.append((document, score))
         results.sort(key=lambda item: item[1], reverse=True)
 
     if question:
         query_tokens = tokenize(question)
-        for entry in SearchIndex.query.all():
+        for entry in SearchIndex.all():
             score = score_document(query_tokens, entry.content)
             if score > 0:
-                document = Document.query.get(entry.document_id)
+                document = Document.get(entry.document_id)
+                if document:
+                    document = document.attach_related()
                 if document and document.current_version:
                     best_chunk = max(chunk_text(document.current_version.content), key=lambda chunk: score_document(query_tokens, chunk), default="")
                     if best_chunk:

@@ -8,7 +8,7 @@ from . import auth, documents, search
 from .config import Config
 from .extensions import db
 from .security import init_auth_manager
-from .models import SearchIndex, load_user
+from .models import SearchIndex, User, create_default_admin, load_user
 
 
 def create_app(config_class: type[Config] = Config) -> Flask:
@@ -45,8 +45,6 @@ def register_cli(app: Flask) -> None:
         """Create an administrator account."""
         from getpass import getpass
 
-        from .models import Role, User
-
         username = input("Username: ")
         if not username:
             raise SystemExit("Username is required")
@@ -55,25 +53,21 @@ def register_cli(app: Flask) -> None:
         if password != confirm:
             raise SystemExit("Passwords do not match")
 
-        user = User.query.filter_by(username=username).first()
-        if user:
+        if User.get_by_username(username):
             print("User already exists.")
             return
 
-        user = User(username=username, role=Role.ADMIN)
-        user.set_password(password)
-        db.session.add(user)
-        db.session.commit()
+        create_default_admin(username, password)
         print("Administrator created.")
 
     @app.cli.command("reindex")
     def rebuild_index() -> None:
         from .models import Document
 
-        SearchIndex.query.delete()
-        for document in Document.query.all():
-            SearchIndex.rebuild_for_document(document)
-        db.session.commit()
+        db.execute("DELETE FROM search_index")
+        for document in Document.list_all():
+            if document.current_version_id:
+                SearchIndex.rebuild_for_document(document)
         print("Search index rebuilt.")
 
     @app.cli.command("init-db")

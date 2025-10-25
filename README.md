@@ -17,7 +17,7 @@ DocBase — это современная внутренняя платформ�
 
 - Python 3.11+
 - Flask 2.3
-- SQLAlchemy 2.0
+- Встроенный модуль sqlite3 (структура хранения без внешних ORM)
 - SQLite (по умолчанию)
 - Bootstrap 5
 
@@ -96,7 +96,7 @@ flask --app run.py reindex
 │   ├── auth.py            # аутентификация и управление пользователями
 │   ├── config.py          # конфигурация приложения
 │   ├── documents.py       # маршруты для работы с документами
-│   ├── extensions.py      # расширения Flask (SQLAlchemy)
+│   ├── extensions.py      # управление подключением к SQLite и схемой БД
 │   ├── security.py        # лёгкий менеджер сессий и декоратор login_required
 │   ├── models.py          # модели данных
 │   ├── search.py          # модуль поиска
