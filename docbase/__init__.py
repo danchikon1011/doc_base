@@ -6,8 +6,9 @@ from flask import Flask
 
 from . import auth, documents, search
 from .config import Config
-from .extensions import db, login_manager
-from .models import SearchIndex
+from .extensions import db
+from .security import init_auth_manager
+from .models import SearchIndex, load_user
 
 
 def create_app(config_class: type[Config] = Config) -> Flask:
@@ -18,7 +19,10 @@ def create_app(config_class: type[Config] = Config) -> Flask:
     Path(app.instance_path).mkdir(parents=True, exist_ok=True)
 
     db.init_app(app)
-    login_manager.init_app(app)
+    manager = init_auth_manager(app)
+    manager.login_view = "auth.login"
+    manager.login_message_category = "warning"
+    manager.user_loader(load_user)
 
     register_blueprints(app)
     register_cli(app)
@@ -71,3 +75,10 @@ def register_cli(app: Flask) -> None:
             SearchIndex.rebuild_for_document(document)
         db.session.commit()
         print("Search index rebuilt.")
+
+    @app.cli.command("init-db")
+    def init_db() -> None:
+        """Explicitly create the SQLite schema."""
+
+        db.create_all()
+        print("Database initialized.")

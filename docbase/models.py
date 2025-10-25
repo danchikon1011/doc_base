@@ -5,10 +5,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from flask_login import UserMixin
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from .extensions import db, login_manager
+from .extensions import db
+from .security import UserMixin
 
 
 class Role(enum.Enum):
@@ -50,7 +50,6 @@ class User(db.Model, UserMixin):
         return mapping.get(self.role, self.role.value)
 
 
-@login_manager.user_loader
 def load_user(user_id: str) -> Optional["User"]:
     if user_id is None:
         return None

@@ -15,7 +15,6 @@ from flask import (
     send_file,
     url_for,
 )
-from flask_login import current_user, login_required
 
 from .extensions import db
 from .models import (
@@ -28,6 +27,7 @@ from .models import (
     SearchIndex,
     User,
 )
+from .security import current_user, login_required
 from .utils import (
     EDITABLE_EXTENSIONS,
     allowed_file,

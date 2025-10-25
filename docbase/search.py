@@ -5,7 +5,8 @@ from collections import Counter
 from typing import Iterable, List, Tuple
 
 from flask import Blueprint, render_template, request
-from flask_login import login_required
+
+from .security import login_required
 
 from .models import Document, SearchIndex
 from .utils import chunk_text
