@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+{% block title %}Новый документ · DocBase{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-10 col-xl-8">
+    <div class="card shadow-sm border-0">
+      <div class="card-body p-4">
+        <h1 class="h4 mb-4">Создание документа</h1>
+        <form method="post" enctype="multipart/form-data" class="row g-3">
+          <div class="col-12">
+            <label class="form-label" for="title">Название</label>
+            <input class="form-control" type="text" name="title" id="title" required />
+          </div>
+          <div class="col-12">
+            <label class="form-label" for="summary">Краткое описание</label>
+            <textarea class="form-control" name="summary" id="summary" rows="2" placeholder="О чём этот документ?" maxlength="500"></textarea>
+          </div>
+          <div class="col-12">
+            <label class="form-label" for="content">Содержимое</label>
+            <textarea class="form-control" name="content" id="content" rows="10" placeholder="Введите текст или загрузите файл"></textarea>
+            <div class="form-text">Поддерживаемые форматы: .txt, .md, .doc, .docx, .pdf, .pptx, .xlsx и другие офисные документы. Все кроме PDF можно редактировать после загрузки.</div>
+          </div>
+          <div class="col-12">
+            <label class="form-label" for="file">Загрузить файл</label>
+            <input class="form-control" type="file" name="file" id="file" accept=".txt,.md,.markdown,.doc,.docx,.pdf,.ppt,.pptx,.xls,.xlsx,.csv,.rtf" />
+          </div>
+          <div class="col-12 text-end">
+            <button class="btn btn-primary" type="submit">Сохранить</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

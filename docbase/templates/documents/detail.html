@@ -1,0 +1,151 @@
+{% extends 'base.html' %}
+{% block title %}{{ document.title }} · DocBase{% endblock %}
+{% block content %}
+<div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center mb-4 gap-3">
+  <div>
+    <h1 class="h3 mb-1">{{ document.title }}</h1>
+    <p class="text-muted mb-0">Последнее изменение: {{ (document.updated_at or document.created_at)|datetimeformat }}</p>
+  </div>
+  <div class="btn-group">
+    {% if current_user.is_editor %}
+    {% if document.current_version and not document.current_version.is_editable %}
+    <a class="btn btn-outline-primary disabled" tabindex="-1" aria-disabled="true">Редактирование недоступно</a>
+    {% else %}
+    <a class="btn btn-outline-primary" href="{{ url_for('documents.edit', slug=document.slug) }}">Редактировать</a>
+    {% endif %}
+    {% endif %}
+    <a class="btn btn-outline-secondary" href="{{ url_for('documents.history', slug=document.slug) }}">История</a>
+    {% if document.current_version.file_path %}
+    <a class="btn btn-outline-success" href="{{ url_for('documents.download', slug=document.slug) }}">Скачать</a>
+    {% endif %}
+    {% if document.current_version %}
+    <a class="btn btn-outline-dark" href="{{ url_for('documents.print_view', slug=document.slug) }}" target="_blank">На печать</a>
+    {% endif %}
+  </div>
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-8">
+    <div class="card shadow-sm border-0">
+      <div class="card-body">
+        <h2 class="h5 mb-3">Содержимое</h2>
+        {% if document.current_version %}
+        <article class="document-content">{{ document.current_version.content|urlize }}</article>
+        {% else %}
+        <p class="text-muted">Содержимое отсутствует.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-4">
+    <div class="card shadow-sm border-0 mb-3">
+      <div class="card-body">
+        <h3 class="h6 text-uppercase text-muted">Сводка</h3>
+        <p class="mb-0">{{ document.summary or 'Описание отсутствует' }}</p>
+      </div>
+    </div>
+    <div class="card shadow-sm border-0">
+      <div class="card-body">
+        <h3 class="h6 text-uppercase text-muted">Метаданные</h3>
+        <dl class="row mb-0 small">
+          <dt class="col-5 text-muted">Автор</dt>
+          <dd class="col-7">{{ document.owner.username }}</dd>
+          <dt class="col-5 text-muted">Создан</dt>
+          <dd class="col-7">{{ document.created_at|datetimeformat }}</dd>
+          <dt class="col-5 text-muted">Версия</dt>
+          <dd class="col-7">{{ document.current_version.version_number if document.current_version else '—' }}</dd>
+          <dt class="col-5 text-muted">Статус</dt>
+          <dd class="col-7"><span class="badge bg-status-{{ document.approval_state.value }}">{{ document.approval_label }}</span></dd>
+          {% if document.current_version and document.current_version.comment %}
+          <dt class="col-5 text-muted">Комментарий</dt>
+          <dd class="col-7">{{ document.current_version.comment }}</dd>
+          {% endif %}
+          {% if document.current_version and document.current_version.filename %}
+          <dt class="col-5 text-muted">Файл</dt>
+          <dd class="col-7">{{ document.current_version.filename }}</dd>
+          {% endif %}
+          {% if document.current_version and document.current_version.size_label %}
+          <dt class="col-5 text-muted">Размер</dt>
+          <dd class="col-7">{{ document.current_version.size_label }}</dd>
+          {% endif %}
+        </dl>
+      </div>
+    </div>
+    <div class="card shadow-sm border-0">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h3 class="h6 text-uppercase text-muted mb-0">Согласования</h3>
+          {% if current_user.is_editor %}
+          <button class="btn btn-sm btn-primary" type="button" data-bs-toggle="collapse" data-bs-target="#approvalRequest">Запросить</button>
+          {% endif %}
+        </div>
+        {% if current_user.is_editor %}
+        <div class="collapse mb-3" id="approvalRequest">
+          <form method="post" action="{{ url_for('documents.request_approval', slug=document.slug) }}" class="row g-2">
+            <div class="col-12">
+              <label class="form-label small text-muted">Согласующий</label>
+              {% if available_reviewers %}
+              <select class="form-select" name="assignee" required>
+                <option value="" disabled selected>Выберите пользователя</option>
+                {% for reviewer in available_reviewers %}
+                  {% if reviewer.id != current_user.id %}
+                  <option value="{{ reviewer.id }}">{{ reviewer.username }} · {{ reviewer.role_label }}</option>
+                  {% endif %}
+                {% endfor %}
+              </select>
+              {% else %}
+              <div class="alert alert-info mb-0">Нет доступных пользователей для согласования.</div>
+              {% endif %}
+            </div>
+            <div class="col-12">
+              <label class="form-label small text-muted">Комментарий</label>
+              <textarea class="form-control" name="comment" rows="2" placeholder="Укажите детали запроса"></textarea>
+            </div>
+            <div class="col-12 text-end">
+              <button class="btn btn-primary btn-sm" type="submit" {% if not available_reviewers %}disabled{% endif %}>Отправить</button>
+            </div>
+          </form>
+        </div>
+        {% endif %}
+        {% if document.approvals %}
+        <ul class="list-group list-group-flush">
+          {% for approval in document.approvals %}
+          <li class="list-group-item px-0">
+            <div class="d-flex justify-content-between align-items-start">
+              <div>
+                <p class="mb-1 fw-semibold">{{ approval.assigned_to.username }}</p>
+                <p class="mb-1 small text-muted">Запросил {{ approval.requested_by.username }} · {{ approval.created_at|datetimeformat }}</p>
+                {% if approval.comment %}
+                <p class="mb-1 small">{{ approval.comment }}</p>
+                {% endif %}
+                {% if approval.resolution_note %}
+                <p class="mb-1 small text-muted">Комментарий: {{ approval.resolution_note }}</p>
+                {% endif %}
+                {% if approval.decided_at %}
+                <p class="mb-0 small text-muted">Статус обновлён: {{ approval.decided_at|datetimeformat }}</p>
+                {% endif %}
+              </div>
+              <span class="badge bg-status-{{ approval.status.value }}">{{ approval.status_label }}</span>
+            </div>
+            {% if current_user.is_authenticated and (current_user.is_admin or approval.assigned_to_id == current_user.id) and approval.status.value == 'pending' %}
+            <form method="post" action="{{ url_for('documents.approval_decision', approval_id=approval.id) }}" class="mt-3">
+              <div class="mb-2">
+                <textarea class="form-control" name="note" rows="2" placeholder="Комментарий"></textarea>
+              </div>
+              <div class="d-flex gap-2">
+                <button class="btn btn-success btn-sm" name="decision" value="approve" type="submit">Согласовать</button>
+                <button class="btn btn-outline-danger btn-sm" name="decision" value="reject" type="submit">Отклонить</button>
+              </div>
+            </form>
+            {% endif %}
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-muted mb-0">Запросов на согласование пока нет.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

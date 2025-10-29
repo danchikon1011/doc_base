@@ -1,0 +1,34 @@
+{% extends 'base.html' %}
+{% block title %}Редактирование · {{ document.title }}{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-10 col-xl-8">
+    <div class="card shadow-sm border-0">
+      <div class="card-body p-4">
+        <h1 class="h4 mb-4">Редактирование документа</h1>
+        {% if document.current_version and not document.current_version.is_editable %}
+        <div class="alert alert-warning">Редактирование недоступно для формата {{ document.current_version.file_extension|upper }}. Загрузите новый файл или обратитесь к администратору.</div>
+        {% endif %}
+        <form method="post" class="row g-3">
+          <div class="col-12">
+            <label class="form-label" for="summary">Краткое описание</label>
+            <textarea class="form-control" name="summary" id="summary" rows="2">{{ document.summary }}</textarea>
+          </div>
+          <div class="col-12">
+            <label class="form-label" for="content">Содержимое</label>
+            <textarea class="form-control" name="content" id="content" rows="12" {% if document.current_version and not document.current_version.is_editable %}disabled{% else %}required{% endif %}>{{ document.current_version.content }}</textarea>
+          </div>
+          <div class="col-12">
+            <label class="form-label" for="comment">Комментарий к версии</label>
+            <input class="form-control" type="text" name="comment" id="comment" placeholder="Например: обновлены реквизиты" />
+          </div>
+          <div class="col-12 text-end">
+            <a class="btn btn-outline-secondary" href="{{ url_for('documents.detail', slug=document.slug) }}">Отмена</a>
+            <button class="btn btn-primary" type="submit" {% if document.current_version and not document.current_version.is_editable %}disabled{% endif %}>Сохранить изменения</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
