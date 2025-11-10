@@ -1,0 +1,16 @@
+{% extends 'base.html' %}
+{% block title %}Печать · {{ document.title }}{% endblock %}
+{% block content %}
+<div class="print-view">
+  <div class="d-flex justify-content-between align-items-start mb-4">
+    <div>
+      <h1 class="h4 mb-1">{{ document.title }}</h1>
+      <p class="text-muted mb-0">Версия {{ version.version_number }} · {{ version.created_at|datetimeformat }}</p>
+    </div>
+    <button class="btn btn-primary" onclick="window.print()">Печать</button>
+  </div>
+  <article class="document-content border rounded-3 p-4 bg-white shadow-sm">
+    {{ version.content|urlize }}
+  </article>
+</div>
+{% endblock %}

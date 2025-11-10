@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+{% block title %}Пользователи · DocBase{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-6">
+    <div class="card shadow-sm border-0">
+      <div class="card-body p-4">
+        <h1 class="h4 mb-4">Создание пользователя</h1>
+        <p class="text-muted">Доступно только администраторам.</p>
+        <form method="post" class="row g-3">
+          <div class="col-12">
+            <label class="form-label" for="username">Имя пользователя</label>
+            <input class="form-control" type="text" name="username" id="username" required />
+          </div>
+          <div class="col-12">
+            <label class="form-label" for="password">Пароль</label>
+            <input class="form-control" type="password" name="password" id="password" required />
+          </div>
+          <div class="col-12">
+            <label class="form-label" for="role">Роль</label>
+            <select class="form-select" name="role" id="role">
+              {% for role in roles %}
+              <option value="{{ role.value }}">{{ role_labels[role] }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12 text-end">
+            <button class="btn btn-primary" type="submit">Создать</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

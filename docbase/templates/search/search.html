@@ -1,0 +1,66 @@
+{% extends 'base.html' %}
+{% block title %}Поиск · DocBase{% endblock %}
+{% block content %}
+<h1 class="h3 mb-4">Интеллектуальный поиск</h1>
+<div class="row g-4">
+  <div class="col-lg-6">
+    <div class="card shadow-sm border-0 h-100">
+      <div class="card-body">
+        <h2 class="h5">Поиск по ключевым словам</h2>
+        <form method="get" class="vstack gap-3 mb-4">
+          <input type="hidden" name="question" value="{{ question }}" />
+          <div>
+            <label class="form-label" for="q">Запрос</label>
+            <input class="form-control" type="text" name="q" id="q" value="{{ query }}" placeholder="Например: договор аренды" />
+          </div>
+          <button class="btn btn-primary" type="submit">Найти</button>
+        </form>
+        {% if query %}
+        <h3 class="h6 text-muted text-uppercase">Результаты</h3>
+        <div class="list-group list-group-flush">
+          {% for document, score in results %}
+          <a class="list-group-item list-group-item-action" href="{{ url_for('documents.detail', slug=document.slug) }}">
+            <div class="d-flex w-100 justify-content-between">
+              <h5 class="mb-1">{{ document.title }}</h5>
+              <small class="text-muted">Релевантность: {{ '%.2f'|format(score) }}</small>
+            </div>
+            <p class="mb-1 text-muted small">{{ document.summary or (document.current_version.content[:160] ~ '...') if document.current_version else '' }}</p>
+          </a>
+          {% else %}
+          <p class="text-muted">Ничего не найдено.</p>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card shadow-sm border-0 h-100">
+      <div class="card-body">
+        <h2 class="h5">Ответ по документам</h2>
+        <form method="get" class="vstack gap-3 mb-4">
+          <input type="hidden" name="q" value="{{ query }}" />
+          <div>
+            <label class="form-label" for="question">Задайте вопрос</label>
+            <input class="form-control" type="text" name="question" id="question" value="{{ question }}" placeholder="Например: какие реквизиты компании?" />
+          </div>
+          <button class="btn btn-primary" type="submit">Получить ответ</button>
+        </form>
+        {% if question %}
+        <h3 class="h6 text-muted text-uppercase">Предполагаемые ответы</h3>
+        <div class="list-group list-group-flush">
+          {% for document, snippet in answers %}
+          <a class="list-group-item list-group-item-action" href="{{ url_for('documents.detail', slug=document.slug) }}">
+            <h5 class="mb-1">{{ document.title }}</h5>
+            <p class="mb-1 small">{{ snippet }}</p>
+          </a>
+          {% else %}
+          <p class="text-muted">Ответ не найден. Попробуйте переформулировать вопрос.</p>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
