@@ -30,6 +30,7 @@ from .utils import (
     detect_mime_type,
     ensure_directory,
     extract_text_from_file,
+    prepare_preview,
     write_content_to_file,
 )
 
@@ -66,7 +67,15 @@ def dashboard():
 @login_required
 def detail(slug: str):
     document = _get_document_or_404(slug)
-    return render_template("documents/detail.html", document=document)
+    preview = None
+    version = document.current_version
+    if version:
+        preview = prepare_preview(
+            version.file_extension,
+            version.file_path,
+            version.content,
+        )
+    return render_template("documents/detail.html", document=document, preview=preview)
 
 
 @bp.route("/documents/create", methods=["GET", "POST"])
@@ -76,7 +85,7 @@ def create():
     if request.method == "POST":
         title = request.form.get("title", "").strip()
         summary = request.form.get("summary", "").strip() or None
-        content = request.form.get("content", "").strip()
+        content = ""
         uploaded = request.files.get("file")
 
         if not title:
@@ -117,13 +126,7 @@ def create():
             )
 
         if not content:
-            if file_path:
-                try:
-                    Path(file_path).unlink(missing_ok=True)
-                except Exception:  # pragma: no cover - cleanup best effort
-                    pass
-            flash("Необходимо заполнить содержимое документа или загрузить файл", "danger")
-            return render_template("documents/create.html")
+            content = "Документ создан. Добавьте содержимое в редакторе." 
 
         document = Document.create(
             title=title,
