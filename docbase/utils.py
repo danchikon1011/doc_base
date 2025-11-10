@@ -71,9 +71,8 @@ except Exception:  # pragma: no cover
     Presentation = None
 
 try:  # pragma: no cover - optional dependency
-    from openpyxl import Workbook, load_workbook
+    from openpyxl import load_workbook
 except Exception:  # pragma: no cover
-    Workbook = None
     load_workbook = None
 
 try:  # pragma: no cover - optional dependency
@@ -100,8 +99,6 @@ ALLOWED_EXTENSIONS = {
     "csv",
     "rtf",
 }
-
-EDITABLE_EXTENSIONS = ALLOWED_EXTENSIONS - {"pdf"}
 
 
 def allowed_file(filename: str) -> bool:
@@ -174,47 +171,6 @@ def extract_text_from_file(path: Path, extension: str) -> str:
 
 def ensure_directory(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
-
-
-def write_content_to_file(content: str, extension: str, destination: Path) -> Optional[Path]:
-    extension = extension.lower()
-    if extension in {"txt", "md", "markdown", "csv"}:
-        destination.write_text(content, encoding="utf-8")
-        return destination
-    if extension in {"doc", "docx"} and DocxDocument is not None:
-        doc = DocxDocument()
-        for paragraph in content.splitlines() or [""]:
-            doc.add_paragraph(paragraph)
-        doc.save(destination)
-        return destination
-    if extension in {"ppt", "pptx"} and Presentation is not None:
-        presentation = Presentation()
-        layout = presentation.slide_layouts[1]
-        slide = presentation.slides.add_slide(layout)
-        if slide.shapes.title:
-            slide.shapes.title.text = "Документ"
-        placeholder = None
-        if len(slide.shapes.placeholders) > 1:
-            placeholder = slide.shapes.placeholders[1]
-        if placeholder and hasattr(placeholder, "text"):
-            placeholder.text = content
-        else:
-            textbox = slide.shapes.add_textbox(left=0, top=0, width=presentation.slide_width, height=presentation.slide_height)
-            textbox.text_frame.text = content
-        presentation.save(destination)
-        return destination
-    if extension in {"xls", "xlsx"} and Workbook is not None:
-        workbook = Workbook()
-        sheet = workbook.active
-        for idx, line in enumerate(content.splitlines(), start=1):
-            sheet.cell(row=idx, column=1, value=line)
-        workbook.save(destination)
-        return destination
-    if extension == "rtf":
-        destination.write_text(content, encoding="utf-8")
-        return destination
-    destination.write_text(content, encoding="utf-8")
-    return destination
 
 
 def chunk_text(text: str, max_length: int = 600) -> Iterable[str]:

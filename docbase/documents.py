@@ -25,13 +25,11 @@ from .models import (
 )
 from .security import current_user, login_required
 from .utils import (
-    EDITABLE_EXTENSIONS,
     allowed_file,
     detect_mime_type,
     ensure_directory,
     extract_text_from_file,
     prepare_preview,
-    write_content_to_file,
 )
 
 bp = Blueprint("documents", __name__)
@@ -67,15 +65,7 @@ def dashboard():
 @login_required
 def detail(slug: str):
     document = _get_document_or_404(slug)
-    preview = None
-    version = document.current_version
-    if version:
-        preview = prepare_preview(
-            version.file_extension,
-            version.file_path,
-            version.content,
-        )
-    return render_template("documents/detail.html", document=document, preview=preview)
+    return render_template("documents/detail.html", document=document)
 
 
 @bp.route("/documents/create", methods=["GET", "POST"])
@@ -126,7 +116,7 @@ def create():
             )
 
         if not content:
-            content = "Документ создан. Добавьте содержимое в редакторе." 
+            content = "Документ создан. Загрузите файл с содержимым в новой версии."
 
         document = Document.create(
             title=title,
@@ -147,48 +137,83 @@ def create():
     return render_template("documents/create.html")
 
 
-@bp.route("/documents/<slug>/edit", methods=["GET", "POST"])
+@bp.route("/documents/<slug>/versions", methods=["POST"])
 @login_required
-def edit(slug: str):
+def upload_version(slug: str):
     require_editor()
     document = _get_document_or_404(slug)
-    if request.method == "POST":
-        current_version = document.current_version
-        if current_version and not current_version.is_editable:
-            flash("Редактирование недоступно для данного типа файла", "warning")
-            return redirect(url_for("documents.detail", slug=document.slug))
 
-        content = request.form.get("content", "").strip()
-        summary = request.form.get("summary", "").strip() or None
-        comment = request.form.get("comment", "").strip() or "Обновлено"
+    uploaded = request.files.get("file")
+    if not uploaded or not uploaded.filename:
+        flash("Выберите файл для загрузки", "danger")
+        return redirect(url_for("documents.detail", slug=document.slug))
 
-        if not content:
-            flash("Содержимое не может быть пустым", "danger")
-        else:
-            new_file_size: Optional[int] = None
-            if current_version and current_version.file_extension in EDITABLE_EXTENSIONS and current_version.file_path:
-                try:
-                    destination = Path(current_version.file_path)
-                    write_content_to_file(
-                        content,
-                        current_version.file_extension or "txt",
-                        destination,
-                    )
-                    new_file_size = destination.stat().st_size
-                except Exception as exc:  # pragma: no cover - defensive logging
-                    current_app.logger.exception("Не удалось обновить файл", exc_info=exc)
+    filename = uploaded.filename
+    if not allowed_file(filename):
+        flash("Этот формат файла не поддерживается", "warning")
+        return redirect(url_for("documents.detail", slug=document.slug))
 
-            document.add_version(
-                editor=current_user,
-                content=content,
-                comment=comment,
-                summary=summary,
-                file_size=new_file_size,
-            )
-            flash("Документ обновлен", "success")
-            return redirect(url_for("documents.detail", slug=document.slug))
+    upload_folder = Path(current_app.config["UPLOAD_FOLDER"])
+    ensure_directory(upload_folder)
 
-    return render_template("documents/edit.html", document=document)
+    file_extension = filename.rsplit(".", 1)[1].lower()
+    safe_name = f"{int(datetime.utcnow().timestamp())}_{current_user.id}_{filename}"
+    destination = upload_folder / safe_name
+    uploaded.save(destination)
+
+    mime_type = detect_mime_type(filename)
+    file_size = destination.stat().st_size
+
+    try:
+        content = extract_text_from_file(destination, file_extension)
+    except Exception as exc:  # pragma: no cover - defensive logging
+        current_app.logger.exception("Не удалось извлечь текст", exc_info=exc)
+        content = ""
+
+    if not content:
+        content = (
+            "Содержимое новой версии не может быть отображено, но файл сохранён в системе."
+        )
+
+    summary = request.form.get("summary", "").strip() or document.summary
+    comment = request.form.get("comment", "").strip() or "Загружена новая версия"
+
+    document.add_version(
+        editor=current_user,
+        content=content,
+        comment=comment,
+        summary=summary,
+        filename=filename,
+        file_path=str(destination),
+        file_extension=file_extension,
+        mime_type=mime_type,
+        file_size=file_size,
+    )
+
+    flash("Новая версия успешно добавлена", "success")
+    return redirect(url_for("documents.detail", slug=document.slug))
+
+
+@bp.route("/documents/<slug>/preview")
+@login_required
+def preview(slug: str):
+    document = _get_document_or_404(slug)
+    version = document.current_version
+    if not version:
+        abort(404)
+
+    preview_data = prepare_preview(
+        version.file_extension,
+        version.file_path,
+        version.content,
+    )
+
+    return render_template(
+        "documents/preview.html",
+        document=document,
+        version=version,
+        preview=preview_data,
+    )
 
 
 @bp.route("/documents/<slug>/history")

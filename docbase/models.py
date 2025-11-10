@@ -152,14 +152,6 @@ class DocumentVersion:
     editor: Optional[User] = None
 
     @property
-    def is_editable(self) -> bool:
-        if not self.file_extension:
-            return True
-        from .utils import EDITABLE_EXTENSIONS
-
-        return self.file_extension.lower() in EDITABLE_EXTENSIONS
-
-    @property
     def storage_path(self) -> Optional[Path]:
         return Path(self.file_path) if self.file_path else None
 
