@@ -4,9 +4,11 @@ import html
 import mimetypes
 import re
 from pathlib import Path
-from typing import Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Iterable, List, Optional, Sequence, Tuple
 from xml.etree import ElementTree as ET
 from zipfile import ZipFile
+
+MSO_THEME_COLOR_INDEX = None
 
 try:  # pragma: no cover - optional dependency
     from docx import Document as DocxDocument
@@ -14,9 +16,21 @@ except Exception:  # pragma: no cover - gracefully handled later
     DocxDocument = None
     DocxParagraph = None
     WD_ALIGN_PARAGRAPH = None
+    WD_COLOR_INDEX = None
+    WD_UNDERLINE = None
 else:  # pragma: no cover - optional dependency
-    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.enum.text import (
+        WD_ALIGN_PARAGRAPH,
+        WD_COLOR_INDEX,
+        WD_UNDERLINE,
+    )
     from docx.text.paragraph import Paragraph as DocxParagraph
+
+    try:  # pragma: no cover - optional dependency
+        from docx.enum.dml import MSO_THEME_COLOR_INDEX as _MSO_THEME_COLOR_INDEX
+    except Exception:  # pragma: no cover - gracefully handled later
+        _MSO_THEME_COLOR_INDEX = None
+    MSO_THEME_COLOR_INDEX = _MSO_THEME_COLOR_INDEX
 
 try:  # pragma: no cover - optional dependency
     from pptx import Presentation
@@ -196,6 +210,44 @@ SPREADSHEET_NS = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
 REL_NS = "{http://schemas.openxmlformats.org/package/2006/relationships}"
 
 
+DOCX_THEME_COLOR_MAP = {
+    "ACCENT_1": "#4472C4",
+    "ACCENT_2": "#ED7D31",
+    "ACCENT_3": "#A5A5A5",
+    "ACCENT_4": "#FFC000",
+    "ACCENT_5": "#5B9BD5",
+    "ACCENT_6": "#70AD47",
+    "BACKGROUND_1": "#FFFFFF",
+    "BACKGROUND_2": "#E7E6E6",
+    "DARK_1": "#000000",
+    "DARK_2": "#44546A",
+    "FOLLOWED_HYPERLINK": "#954F72",
+    "HYPERLINK": "#0563C1",
+    "LIGHT_1": "#FFFFFF",
+    "LIGHT_2": "#E7E6E6",
+    "TEXT_1": "#000000",
+    "TEXT_2": "#44546A",
+}
+
+DOCX_HIGHLIGHT_COLOR_MAP = {
+    "BLACK": "#000000",
+    "BLUE": "#0000FF",
+    "BRIGHT_GREEN": "#00FF00",
+    "DARK_BLUE": "#00008B",
+    "DARK_RED": "#8B0000",
+    "DARK_YELLOW": "#808000",
+    "GRAY_25": "#C0C0C0",
+    "GRAY_50": "#7F7F7F",
+    "GREEN": "#008000",
+    "PINK": "#FFC0CB",
+    "RED": "#FF0000",
+    "TURQUOISE": "#40E0D0",
+    "VIOLET": "#EE82EE",
+    "WHITE": "#FFFFFF",
+    "YELLOW": "#FFFF00",
+}
+
+
 def _zip_xml(path: Path, member: str) -> Optional[ET.Element]:
     try:
         with ZipFile(path) as archive:
@@ -205,6 +257,206 @@ def _zip_xml(path: Path, member: str) -> Optional[ET.Element]:
         return None
     except Exception:
         return None
+
+
+def _first_defined(*values: Any) -> Any:
+    for value in values:
+        if value is not None:
+            return value
+    return None
+
+
+def _docx_format_hex(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    stripped = value.strip().lstrip("#")
+    if not stripped:
+        return None
+    if len(stripped) not in {3, 6}:
+        return None
+    if any(ch not in "0123456789abcdefABCDEF" for ch in stripped):
+        return None
+    return f"#{stripped.upper()}"
+
+
+def _docx_color_to_css(color: Any) -> Optional[str]:
+    if color is None:
+        return None
+    rgb = getattr(color, "rgb", None)
+    if rgb is not None:
+        try:
+            return _docx_format_hex(str(rgb))
+        except Exception:
+            pass
+    theme_color = getattr(color, "theme_color", None)
+    if theme_color is not None:
+        name = getattr(theme_color, "name", None) or str(theme_color)
+        if name:
+            name = name.split()[0].upper()
+            css = DOCX_THEME_COLOR_MAP.get(name)
+            if css:
+                return css
+    if MSO_THEME_COLOR_INDEX is not None and rgb is None:
+        try:
+            theme_value = getattr(color, "theme_color", None)
+            if theme_value is not None:
+                resolved = MSO_THEME_COLOR_INDEX(theme_value)
+                name = getattr(resolved, "name", None)
+                if name and name in DOCX_THEME_COLOR_MAP:
+                    return DOCX_THEME_COLOR_MAP[name]
+        except Exception:
+            pass
+    return None
+
+
+def _docx_highlight_to_css(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    name = getattr(value, "name", None)
+    if name is None:
+        if isinstance(value, str):
+            name = value.upper()
+        elif WD_COLOR_INDEX is not None:
+            try:
+                resolved = WD_COLOR_INDEX(value)
+                name = getattr(resolved, "name", None)
+            except Exception:
+                name = None
+    if not name:
+        return None
+    name = name.split()[0].upper()
+    return DOCX_HIGHLIGHT_COLOR_MAP.get(name)
+
+
+def _docx_length_to_css(length: Any) -> Optional[str]:
+    if length is None:
+        return None
+    value: Optional[float] = None
+    if hasattr(length, "pt"):
+        try:
+            value = float(length.pt)
+        except Exception:
+            value = None
+    if value is None:
+        try:
+            value = float(length)
+        except Exception:
+            value = None
+    if value is None or value <= 0:
+        return None
+    formatted = f"{value:.2f}".rstrip("0").rstrip(".")
+    return f"{formatted}pt"
+
+
+def _docx_collect_font_candidates(run: Any, defaults: Optional[dict]) -> List[Any]:
+    fonts: List[Any] = []
+    font = getattr(run, "font", None)
+    if font is not None:
+        fonts.append(font)
+    style = getattr(run, "style", None)
+    style_font = getattr(style, "font", None) if style is not None else None
+    if style_font is not None:
+        fonts.append(style_font)
+    paragraph = getattr(run, "paragraph", None)
+    if paragraph is not None:
+        para_style = getattr(paragraph, "style", None)
+        para_font = getattr(para_style, "font", None) if para_style is not None else None
+        if para_font is not None:
+            fonts.append(para_font)
+    if defaults:
+        for fallback_font in defaults.get("font_chain", []) or []:
+            if fallback_font is not None:
+                fonts.append(fallback_font)
+    return fonts
+
+
+def _docx_font_property(fonts: Sequence[Any], attribute: str) -> Any:
+    for font in fonts:
+        if font is None:
+            continue
+        try:
+            value = getattr(font, attribute)
+        except Exception:
+            continue
+        if value is not None:
+            return value
+    return None
+
+
+def _docx_is_underlined(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return value.lower() != "none"
+    if value in (False, 0):
+        return False
+    if WD_UNDERLINE is not None:
+        try:
+            if value == WD_UNDERLINE.NONE:
+                return False
+        except Exception:
+            pass
+    if hasattr(value, "value") and WD_UNDERLINE is not None:
+        try:
+            if value.value == WD_UNDERLINE.NONE:
+                return False
+        except Exception:
+            pass
+    return True
+
+
+def _docx_document_defaults(document: Any) -> dict:
+    defaults = {
+        "font_chain": [],
+        "font_name": None,
+        "font_size": None,
+        "font_color": None,
+        "font_highlight": None,
+    }
+    styles = getattr(document, "styles", None)
+    if styles is not None:
+        normal_style = None
+        try:
+            normal_style = styles["Normal"]
+        except Exception:
+            normal_style = None
+        if normal_style is not None:
+            normal_font = getattr(normal_style, "font", None)
+            if normal_font is not None:
+                defaults["font_chain"].append(normal_font)
+                defaults["font_name"] = getattr(normal_font, "name", None)
+                defaults["font_size"] = getattr(normal_font, "size", None)
+                defaults["font_color"] = getattr(normal_font, "color", None)
+                defaults["font_highlight"] = getattr(
+                    normal_font, "highlight_color", None
+                )
+    return defaults
+
+
+def _docx_apply_defaults(html_text: str, defaults: Optional[dict]) -> str:
+    if not defaults:
+        return html_text
+    style_parts: List[str] = []
+    font_name = defaults.get("font_name")
+    font_size = defaults.get("font_size")
+    font_color = defaults.get("font_color")
+    highlight = defaults.get("font_highlight")
+    if font_name:
+        safe_name = font_name.replace("\\", "\\\\").replace('"', '\\"')
+        style_parts.append(f'font-family: "{safe_name}"')
+    size_css = _docx_length_to_css(font_size)
+    if size_css:
+        style_parts.append(f"font-size: {size_css}")
+    color_css = _docx_color_to_css(font_color)
+    if color_css:
+        style_parts.append(f"color: {color_css}")
+    highlight_css = _docx_highlight_to_css(highlight)
+    if highlight_css:
+        style_parts.append(f"background-color: {highlight_css}")
+    if not style_parts:
+        return html_text
+    style_attr = html.escape("; ".join(style_parts), quote=True)
+    return f"<span style=\"{style_attr}\">{html_text}</span>"
 
 
 def extract_docx_paragraphs(path: Path) -> List[str]:
@@ -408,28 +660,111 @@ def prepare_preview(extension: Optional[str], file_path: Optional[str], content:
     return {"kind": "text", "text": text}
 
 
-def _docx_run_to_html(run) -> str:
+def _docx_run_to_html(run, defaults: Optional[dict] = None) -> str:
     text = html.escape(getattr(run, "text", "") or "")
-    if not text:
+    if text == "":
         return ""
     text = text.replace("\n", "<br />")
-    bold = getattr(run, "bold", None)
-    italic = getattr(run, "italic", None)
-    underline = getattr(run, "underline", None)
-    font = getattr(run, "font", None)
-    if font is not None:
-        if bold is None:
-            bold = getattr(font, "bold", None)
-        if italic is None:
-            italic = getattr(font, "italic", None)
-        if underline is None:
-            underline = getattr(font, "underline", None)
+
+    fonts = _docx_collect_font_candidates(run, defaults)
+
+    bold = _first_defined(getattr(run, "bold", None), _docx_font_property(fonts, "bold"))
+    italic = _first_defined(
+        getattr(run, "italic", None), _docx_font_property(fonts, "italic")
+    )
+    underline_value = _first_defined(
+        getattr(run, "underline", None), _docx_font_property(fonts, "underline")
+    )
+    strike_value = _first_defined(
+        getattr(run, "strike", None), _docx_font_property(fonts, "strike")
+    )
+    double_strike = _docx_font_property(fonts, "double_strike")
+
+    style_parts: List[str] = []
+    text_decorations: List[str] = []
+
+    font_name = _docx_font_property(fonts, "name")
+    if font_name is None and defaults:
+        font_name = defaults.get("font_name")
+    if font_name:
+        safe_name = font_name.replace("\\", "\\\\").replace('"', '\\"')
+        style_parts.append(f'font-family: "{safe_name}"')
+
+    font_size_obj = _docx_font_property(fonts, "size")
+    if font_size_obj is None and defaults:
+        font_size_obj = defaults.get("font_size")
+    size_css = _docx_length_to_css(font_size_obj)
+    if size_css:
+        style_parts.append(f"font-size: {size_css}")
+
+    color_obj = _docx_font_property(fonts, "color")
+    if color_obj is None and defaults:
+        color_obj = defaults.get("font_color")
+    color_css = _docx_color_to_css(color_obj)
+    if color_css:
+        style_parts.append(f"color: {color_css}")
+
+    highlight_obj = _docx_font_property(fonts, "highlight_color")
+    if highlight_obj is None and defaults:
+        highlight_obj = defaults.get("font_highlight")
+    highlight_css = _docx_highlight_to_css(highlight_obj)
+    if highlight_css:
+        style_parts.append(f"background-color: {highlight_css}")
+
+    all_caps = _docx_font_property(fonts, "all_caps")
+    if all_caps:
+        style_parts.append("text-transform: uppercase")
+
+    small_caps = _docx_font_property(fonts, "small_caps")
+    if small_caps:
+        style_parts.append("font-variant: small-caps")
+
+    shadow = _docx_font_property(fonts, "shadow")
+    if shadow:
+        style_parts.append("text-shadow: 0.5px 0.5px 0 currentColor")
+
+    if strike_value:
+        text_decorations.append("line-through")
+    if double_strike:
+        text_decorations.append("line-through")
+
+    underline = _docx_is_underlined(underline_value)
+    if underline:
+        text_decorations.append("underline")
+
+    if text_decorations:
+        unique: List[str] = []
+        for decoration in text_decorations:
+            if decoration not in unique:
+                unique.append(decoration)
+        style_parts.append(f"text-decoration: {' '.join(unique)}")
+
+    superscript = _docx_font_property(fonts, "superscript")
+    subscript = _docx_font_property(fonts, "subscript")
+    if superscript and not subscript:
+        style_parts.append("vertical-align: super")
+        if size_css is None:
+            style_parts.append("font-size: 0.83em")
+    elif subscript and not superscript:
+        style_parts.append("vertical-align: sub")
+        if size_css is None:
+            style_parts.append("font-size: 0.83em")
+
+    style_attr = ""
+    if style_parts:
+        style_attr = ' style="{}"'.format(html.escape("; ".join(style_parts), quote=True))
+
+    class_attr = ""
+    if underline:
+        class_attr = ' class="docx-underline"'
+
+    if style_attr or class_attr:
+        text = f"<span{class_attr}{style_attr}>{text}</span>"
+
     if bold:
         text = f"<strong>{text}</strong>"
     if italic:
         text = f"<em>{text}</em>"
-    if underline:
-        text = f"<span class=\"docx-underline\">{text}</span>"
     return text
 
 
@@ -484,17 +819,23 @@ def _docx_heading_level(style_name: str) -> int:
     return 2
 
 
-def _docx_render_table(table) -> str:
+def _docx_render_table(table, defaults: Optional[dict]) -> str:
     rows_html: List[str] = []
     for row in getattr(table, "rows", []):
         cells_html: List[str] = []
         for cell in getattr(row, "cells", []):
             cell_paragraphs: List[str] = []
             for paragraph in getattr(cell, "paragraphs", []):
-                paragraph_html = "".join(_docx_run_to_html(run) for run in getattr(paragraph, "runs", []))
+                paragraph_html = "".join(
+                    _docx_run_to_html(run, defaults)
+                    for run in getattr(paragraph, "runs", [])
+                )
                 if not paragraph_html:
-                    paragraph_html = html.escape(getattr(paragraph, "text", "") or "")
-                paragraph_html = paragraph_html.replace("\n", "<br />")
+                    raw_text = html.escape(getattr(paragraph, "text", "") or "")
+                    raw_text = raw_text.replace("\n", "<br />")
+                    paragraph_html = _docx_apply_defaults(raw_text, defaults)
+                else:
+                    paragraph_html = paragraph_html.replace("\n", "<br />")
                 if paragraph_html:
                     cell_paragraphs.append(paragraph_html)
             cells_html.append("<td>{}</td>".format("<br />".join(cell_paragraphs) or "&nbsp;"))
@@ -515,6 +856,7 @@ def render_docx_html(path: Path) -> str:
 
     html_parts: List[str] = []
     list_stack: List[int] = []
+    defaults = _docx_document_defaults(document)
 
     paragraphs: Sequence = getattr(document, "paragraphs", [])
     tables: Sequence = getattr(document, "tables", [])
@@ -537,16 +879,20 @@ def render_docx_html(path: Path) -> str:
                     table = None
             if table is not None:
                 _docx_close_lists(html_parts, list_stack, 0)
-                table_html = _docx_render_table(table)
+                table_html = _docx_render_table(table, defaults)
                 if table_html:
                     html_parts.append(table_html)
             continue
         if tag != "p":
             continue
         paragraph = DocxParagraph(child, document)
-        paragraph_html = "".join(_docx_run_to_html(run) for run in paragraph.runs)
+        paragraph_html = "".join(
+            _docx_run_to_html(run, defaults) for run in paragraph.runs
+        )
         if not paragraph_html:
-            paragraph_html = html.escape(paragraph.text or "")
+            raw_text = html.escape(paragraph.text or "")
+            raw_text = raw_text.replace("\n", "<br />")
+            paragraph_html = _docx_apply_defaults(raw_text, defaults)
         paragraph_html = paragraph_html.replace("\n", "<br />").strip()
         if not paragraph_html:
             continue
