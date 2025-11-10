@@ -36,6 +36,8 @@
             <iframe src="{{ url_for('documents.serve_file', slug=document.slug) }}" title="{{ version.filename or document.title }}" frameborder="0"></iframe>
           </div>
           <p class="mt-3 text-muted small">Если документ не отображается, <a href="{{ url_for('documents.download', slug=document.slug) }}">скачайте PDF-файл</a>.</p>
+          {% elif preview and preview.kind == 'docx' %}
+          <div class="document-content document-content--docx">{{ preview.html | safe }}</div>
           {% elif preview and preview.kind == 'paragraphs' %}
           <div class="document-content document-content--rich">
             {% if preview.paragraphs %}
@@ -52,7 +54,10 @@
               {% for slide in preview.slides %}
               <div class="slide-card mb-3">
                 <div class="slide-header text-muted small">Слайд {{ loop.index }}</div>
-                <div class="slide-body">{{ slide | replace('\n', '<br />') | safe }}</div>
+                {% if slide.title %}
+                <div class="slide-title fw-semibold mb-2">{{ slide.title }}</div>
+                {% endif %}
+                <div class="slide-body">{{ (slide.html or '') | safe }}</div>
               </div>
               {% endfor %}
             {% else %}

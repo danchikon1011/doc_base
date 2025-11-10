@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import html
 import mimetypes
+import re
 from pathlib import Path
-from typing import Iterable, List, Optional, Tuple
+from typing import Iterable, List, Optional, Sequence, Tuple
 from xml.etree import ElementTree as ET
 from zipfile import ZipFile
 
@@ -10,6 +12,11 @@ try:  # pragma: no cover - optional dependency
     from docx import Document as DocxDocument
 except Exception:  # pragma: no cover - gracefully handled later
     DocxDocument = None
+    DocxParagraph = None
+    WD_ALIGN_PARAGRAPH = None
+else:  # pragma: no cover - optional dependency
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.text.paragraph import Paragraph as DocxParagraph
 
 try:  # pragma: no cover - optional dependency
     from pptx import Presentation
@@ -97,8 +104,21 @@ def extract_text_from_file(path: Path, extension: str) -> str:
         if extracted is not None:
             return extracted
         return read_text_file(path)
-    if extension == "pdf" and extract_pdf_text is not None:
-        return extract_pdf_text(str(path))
+    if extension == "pdf":
+        if extract_pdf_text is not None:
+            try:
+                text = extract_pdf_text(str(path))
+                if text and text.strip():
+                    return text
+            except Exception:
+                pass
+        extracted = _extract_with_textract(path)
+        if extracted is not None:
+            return extracted
+        try:
+            return path.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            return ""
     extracted = _extract_with_textract(path)
     if extracted is not None:
         return extracted
@@ -346,6 +366,10 @@ def prepare_preview(extension: Optional[str], file_path: Optional[str], content:
         return {"kind": "pdf"}
 
     if ext in {"doc", "docx", "rtf", "txt", "md", "markdown"}:
+        if path and path.exists() and ext == "docx":
+            html_preview = render_docx_html(path)
+            if html_preview:
+                return {"kind": "docx", "html": html_preview}
         paragraphs: List[str] = []
         if path and path.exists() and ext in {"doc", "docx"}:
             paragraphs = extract_docx_paragraphs(path)
@@ -354,11 +378,17 @@ def prepare_preview(extension: Optional[str], file_path: Optional[str], content:
         return {"kind": "paragraphs", "paragraphs": paragraphs or [content]}
 
     if ext in {"ppt", "pptx"}:
-        slides: List[str] = []
+        slides = []
         if path and path.exists():
-            slides = extract_pptx_slides(path)
-        if not slides and content:
-            slides = [block.strip() for block in content.split("\n\n") if block.strip()]
+            slides = build_pptx_preview(path)
+        if not slides:
+            slide_texts: List[str] = []
+            if path and path.exists():
+                slide_texts = extract_pptx_slides(path)
+            if not slide_texts and content:
+                slide_texts = [block.strip() for block in content.split("\n\n") if block.strip()]
+            if slide_texts:
+                slides = build_pptx_preview_from_text(slide_texts)
         return {"kind": "slides", "slides": slides}
 
     if ext in {"xls", "xlsx", "csv"}:
@@ -376,3 +406,261 @@ def prepare_preview(extension: Optional[str], file_path: Optional[str], content:
 
     text = content or ""
     return {"kind": "text", "text": text}
+
+
+def _docx_run_to_html(run) -> str:
+    text = html.escape(getattr(run, "text", "") or "")
+    if not text:
+        return ""
+    text = text.replace("\n", "<br />")
+    bold = getattr(run, "bold", None)
+    italic = getattr(run, "italic", None)
+    underline = getattr(run, "underline", None)
+    font = getattr(run, "font", None)
+    if font is not None:
+        if bold is None:
+            bold = getattr(font, "bold", None)
+        if italic is None:
+            italic = getattr(font, "italic", None)
+        if underline is None:
+            underline = getattr(font, "underline", None)
+    if bold:
+        text = f"<strong>{text}</strong>"
+    if italic:
+        text = f"<em>{text}</em>"
+    if underline:
+        text = f"<span class=\"docx-underline\">{text}</span>"
+    return text
+
+
+def _docx_list_level(paragraph) -> Optional[int]:
+    if paragraph is None or getattr(paragraph, "_p", None) is None:
+        return None
+    p = paragraph._p
+    pPr = getattr(p, "pPr", None)
+    if pPr is None:
+        return None
+    numPr = getattr(pPr, "numPr", None)
+    if numPr is None:
+        return None
+    ilvl = getattr(numPr, "ilvl", None)
+    if ilvl is not None and getattr(ilvl, "val", None) is not None:
+        try:
+            return int(ilvl.val)
+        except (TypeError, ValueError):
+            return 0
+    return 0
+
+
+def _docx_close_lists(html_parts: List[str], stack: List[int], target: int = 0) -> None:
+    while len(stack) > target:
+        html_parts.append("</ul>")
+        stack.pop()
+
+
+def _docx_alignment_class(paragraph) -> str:
+    if WD_ALIGN_PARAGRAPH is None:
+        return ""
+    alignment = getattr(paragraph, "alignment", None)
+    if alignment is None:
+        return ""
+    if alignment == WD_ALIGN_PARAGRAPH.CENTER:
+        return " docx-align-center"
+    if alignment == WD_ALIGN_PARAGRAPH.RIGHT:
+        return " docx-align-right"
+    if alignment == WD_ALIGN_PARAGRAPH.JUSTIFY:
+        return " docx-align-justify"
+    return ""
+
+
+def _docx_heading_level(style_name: str) -> int:
+    match = re.search(r"(\d+)", style_name)
+    if match:
+        try:
+            value = int(match.group(1))
+            return max(1, min(6, value))
+        except ValueError:
+            return 2
+    return 2
+
+
+def _docx_render_table(table) -> str:
+    rows_html: List[str] = []
+    for row in getattr(table, "rows", []):
+        cells_html: List[str] = []
+        for cell in getattr(row, "cells", []):
+            cell_paragraphs: List[str] = []
+            for paragraph in getattr(cell, "paragraphs", []):
+                paragraph_html = "".join(_docx_run_to_html(run) for run in getattr(paragraph, "runs", []))
+                if not paragraph_html:
+                    paragraph_html = html.escape(getattr(paragraph, "text", "") or "")
+                paragraph_html = paragraph_html.replace("\n", "<br />")
+                if paragraph_html:
+                    cell_paragraphs.append(paragraph_html)
+            cells_html.append("<td>{}</td>".format("<br />".join(cell_paragraphs) or "&nbsp;"))
+        if cells_html:
+            rows_html.append(f"<tr>{''.join(cells_html)}</tr>")
+    if not rows_html:
+        return ""
+    return f"<table class=\"docx-table\"><tbody>{''.join(rows_html)}</tbody></table>"
+
+
+def render_docx_html(path: Path) -> str:
+    if DocxDocument is None or DocxParagraph is None:
+        return ""
+    try:
+        document = DocxDocument(str(path))
+    except Exception:
+        return ""
+
+    html_parts: List[str] = []
+    list_stack: List[int] = []
+
+    paragraphs: Sequence = getattr(document, "paragraphs", [])
+    tables: Sequence = getattr(document, "tables", [])
+    tables_iter = iter(tables)
+    table_map = {getattr(table, "_tbl", None): table for table in tables}
+
+    body = getattr(document, "element", None)
+    body = getattr(body, "body", None)
+    if body is None:
+        return ""
+
+    for child in body.iterchildren():
+        tag = child.tag.split("}")[-1]
+        if tag == "tbl":
+            table = table_map.get(child)
+            if table is None:
+                try:
+                    table = next(tables_iter)
+                except StopIteration:
+                    table = None
+            if table is not None:
+                _docx_close_lists(html_parts, list_stack, 0)
+                table_html = _docx_render_table(table)
+                if table_html:
+                    html_parts.append(table_html)
+            continue
+        if tag != "p":
+            continue
+        paragraph = DocxParagraph(child, document)
+        paragraph_html = "".join(_docx_run_to_html(run) for run in paragraph.runs)
+        if not paragraph_html:
+            paragraph_html = html.escape(paragraph.text or "")
+        paragraph_html = paragraph_html.replace("\n", "<br />").strip()
+        if not paragraph_html:
+            continue
+        style = getattr(paragraph, "style", None)
+        style_name = (getattr(style, "name", "") or "").lower()
+        if style_name.startswith("heading"):
+            _docx_close_lists(html_parts, list_stack, 0)
+            level = _docx_heading_level(style_name)
+            html_parts.append(f"<h{level}>{paragraph_html}</h{level}>")
+            continue
+        list_level = _docx_list_level(paragraph)
+        if list_level is not None:
+            while len(list_stack) <= list_level:
+                html_parts.append("<ul class=\"docx-list\">")
+                list_stack.append(len(list_stack))
+            _docx_close_lists(html_parts, list_stack, list_level + 1)
+            html_parts.append(f"<li>{paragraph_html or '&nbsp;'}</li>")
+            continue
+        _docx_close_lists(html_parts, list_stack, 0)
+        alignment_class = _docx_alignment_class(paragraph)
+        html_parts.append(f"<p class=\"docx-paragraph{alignment_class}\">{paragraph_html}</p>")
+
+    _docx_close_lists(html_parts, list_stack, 0)
+    return "".join(html_parts)
+
+
+def _split_slide_lines(lines: Sequence[str]) -> Tuple[Optional[str], List[str]]:
+    cleaned = [line.strip() for line in lines if line.strip()]
+    if not cleaned:
+        return None, []
+    if len(cleaned) == 1:
+        return cleaned[0], []
+    return cleaned[0], cleaned[1:]
+
+
+def build_pptx_preview_from_text(slides: Sequence[str]) -> List[dict]:
+    rendered: List[dict] = []
+    for slide in slides:
+        lines = slide.splitlines()
+        title, bullet_lines = _split_slide_lines(lines)
+        if not bullet_lines and not title:
+            continue
+        body: List[str] = []
+        if bullet_lines:
+            body.append("<ul class=\"pptx-list\">")
+            body.extend(f"<li>{html.escape(line)}</li>" for line in bullet_lines)
+            body.append("</ul>")
+        rendered.append({
+            "title": title,
+            "html": "".join(body) if body else None,
+        })
+    return rendered
+
+
+def build_pptx_preview(path: Path) -> List[dict]:
+    if Presentation is None:
+        return []
+    try:
+        presentation = Presentation(str(path))
+    except Exception:
+        return []
+    slides_payload: List[dict] = []
+    for slide in presentation.slides:
+        title_shape = getattr(slide.shapes, "title", None)
+        title = ""
+        if title_shape is not None:
+            title = (getattr(title_shape, "text", "") or "").strip()
+        body_parts: List[str] = []
+        list_stack: List[int] = []
+
+        def close_lists(level: int = 0) -> None:
+            while len(list_stack) > level:
+                body_parts.append("</ul>")
+                list_stack.pop()
+
+        for shape in slide.shapes:
+            if shape == title_shape:
+                continue
+            text_frame = getattr(shape, "text_frame", None)
+            if text_frame is None:
+                continue
+            for paragraph in text_frame.paragraphs:
+                runs = getattr(paragraph, "runs", [])
+                paragraph_html = "".join(_docx_run_to_html(run) for run in runs)
+                if not paragraph_html:
+                    paragraph_html = html.escape(getattr(paragraph, "text", "") or "")
+                paragraph_html = paragraph_html.replace("\n", "<br />").strip()
+                if not paragraph_html:
+                    continue
+                level = getattr(paragraph, "level", 0) or 0
+                bullet = getattr(paragraph, "_p", None)
+                bullet_enabled = False
+                if bullet is not None:
+                    pPr = getattr(bullet, "pPr", None)
+                    if pPr is not None:
+                        bullet_enabled = any(
+                            child.tag.split("}")[-1].startswith("bu") and child.tag.split("}")[-1] != "buNone"
+                            for child in pPr.iterchildren()
+                        )
+                if bullet_enabled or level > 0:
+                    while len(list_stack) <= level:
+                        body_parts.append("<ul class=\"pptx-list\">")
+                        list_stack.append(len(list_stack))
+                    close_lists(level + 1)
+                    body_parts.append(f"<li>{paragraph_html}</li>")
+                else:
+                    close_lists(0)
+                    body_parts.append(f"<p>{paragraph_html}</p>")
+        close_lists(0)
+        content_html = "".join(body_parts)
+        slides_payload.append(
+            {
+                "title": title or None,
+                "html": content_html or None,
+            }
+        )
+    return slides_payload

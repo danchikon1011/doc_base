@@ -26,6 +26,69 @@ body {
   white-space: normal;
 }
 
+.document-content--docx {
+  white-space: normal;
+  line-height: 1.7;
+  font-family: 'Inter', 'Segoe UI', sans-serif;
+}
+
+.document-content--docx h1,
+.document-content--docx h2,
+.document-content--docx h3,
+.document-content--docx h4,
+.document-content--docx h5,
+.document-content--docx h6 {
+  font-weight: 600;
+  margin-top: 1.5rem;
+  margin-bottom: 0.75rem;
+  color: #2f3a5a;
+}
+
+.document-content--docx p {
+  margin-bottom: 1rem;
+}
+
+.document-content--docx .docx-paragraph.docx-align-center {
+  text-align: center;
+}
+
+.document-content--docx .docx-paragraph.docx-align-right {
+  text-align: right;
+}
+
+.document-content--docx .docx-paragraph.docx-align-justify {
+  text-align: justify;
+}
+
+.document-content--docx .docx-underline {
+  text-decoration: underline;
+}
+
+.document-content--docx .docx-list {
+  padding-left: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.document-content--docx .docx-list li {
+  margin-bottom: 0.5rem;
+}
+
+.document-content--docx .docx-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1.5rem;
+  background-color: #fff;
+  overflow: hidden;
+  border-radius: 12px;
+  box-shadow: inset 0 1px 0 rgba(0, 0, 0, 0.05);
+}
+
+.document-content--docx .docx-table td {
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  padding: 0.75rem;
+  vertical-align: top;
+}
+
 .document-content--rich p {
   margin-bottom: 1rem;
   line-height: 1.65;
@@ -39,11 +102,24 @@ body {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
 }
 
+.document-slides .slide-title {
+  color: #1b2a4b;
+}
+
 .document-slides .slide-body {
-  white-space: pre-line;
+  white-space: normal;
   font-family: 'Inter', 'Segoe UI', sans-serif;
   line-height: 1.6;
   color: #2f3a5a;
+}
+
+.document-slides .pptx-list {
+  padding-left: 1.25rem;
+  margin-bottom: 0;
+}
+
+.document-slides .pptx-list li {
+  margin-bottom: 0.4rem;
 }
 
 .document-spreadsheet .sheet-wrapper {
