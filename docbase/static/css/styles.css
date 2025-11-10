@@ -67,10 +67,19 @@ body {
 .document-content--docx .docx-list {
   padding-left: 1.5rem;
   margin-bottom: 1rem;
+  list-style-position: outside;
+}
+
+.document-content--docx .docx-list.docx-list--ordered {
+  font-variant-numeric: tabular-nums;
 }
 
 .document-content--docx .docx-list li {
   margin-bottom: 0.5rem;
+}
+
+.document-content--docx .docx-list.docx-list--ordered li::marker {
+  font-weight: 600;
 }
 
 .document-content--docx .docx-table {

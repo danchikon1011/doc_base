@@ -4,11 +4,44 @@ import html
 import mimetypes
 import re
 from pathlib import Path
-from typing import Any, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 from xml.etree import ElementTree as ET
 from zipfile import ZipFile
 
 MSO_THEME_COLOR_INDEX = None
+
+DOCX_W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+DOCX_W = f"{{{DOCX_W_NS}}}"
+DOCX_NS_MAP = {"w": DOCX_W_NS}
+
+DOCX_NUMFMT_STYLE_MAP: Dict[str, Dict[str, str]] = {
+    "decimal": {"css": "decimal", "type": "1"},
+    "decimalzero": {"css": "decimal-leading-zero"},
+    "decimalleadingzero": {"css": "decimal-leading-zero"},
+    "upperroman": {"css": "upper-roman", "type": "I"},
+    "lowerroman": {"css": "lower-roman", "type": "i"},
+    "upperletter": {"css": "upper-alpha", "type": "A"},
+    "lowerletter": {"css": "lower-alpha", "type": "a"},
+    "ordinal": {"css": "decimal"},
+    "ordtext": {"css": "decimal"},
+    "cardinaltext": {"css": "decimal"},
+    "hex": {"css": "decimal"},
+    "decimalfullwidth": {"css": "decimal"},
+    "decimalhalfwidth": {"css": "decimal"},
+}
+
+DOCX_BULLET_CHAR_STYLES: Dict[str, str] = {
+    "•": "disc",
+    "●": "disc",
+    "▪": "square",
+    "■": "square",
+    "○": "circle",
+    "◦": "circle",
+    "–": "disc",
+    "-": "disc",
+    "‣": "disc",
+    "»": "disc",
+}
 
 try:  # pragma: no cover - optional dependency
     from docx import Document as DocxDocument
@@ -459,6 +492,323 @@ def _docx_apply_defaults(html_text: str, defaults: Optional[dict]) -> str:
     return f"<span style=\"{style_attr}\">{html_text}</span>"
 
 
+def _docx_extract_bullet_style(text: Optional[str]) -> Optional[str]:
+    if not text:
+        return None
+    stripped = text.replace("%1", "").strip()
+    if not stripped:
+        return None
+    return DOCX_BULLET_CHAR_STYLES.get(stripped)
+
+
+def _docx_numbering_level_info(element: Any) -> Dict[str, Any]:
+    info: Dict[str, Any] = {}
+    if element is None:
+        return info
+    num_fmt_elem = element.find("w:numFmt", DOCX_NS_MAP)
+    lvl_text_elem = element.find("w:lvlText", DOCX_NS_MAP)
+    start_elem = element.find("w:start", DOCX_NS_MAP)
+    fmt_val = None
+    if num_fmt_elem is not None:
+        fmt_val = num_fmt_elem.get(f"{DOCX_W}val")
+    if lvl_text_elem is not None:
+        info["lvl_text"] = lvl_text_elem.get(f"{DOCX_W}val")
+    if start_elem is not None:
+        start_val = start_elem.get(f"{DOCX_W}val")
+        if start_val is not None:
+            try:
+                info["start"] = int(start_val)
+            except (TypeError, ValueError):
+                pass
+    fmt_lower = (fmt_val or "").strip().lower()
+    if fmt_lower:
+        info["num_fmt"] = fmt_lower
+    lvl_text = info.get("lvl_text")
+    ordered = True
+    if fmt_lower in {"bullet", "none"}:
+        ordered = False
+    elif not fmt_lower:
+        ordered = "%" in (lvl_text or "%1")
+    info["ordered"] = ordered
+    if ordered:
+        style_info = DOCX_NUMFMT_STYLE_MAP.get(fmt_lower)
+        if style_info:
+            css_value = style_info.get("css")
+            type_value = style_info.get("type")
+            if css_value:
+                info["css"] = css_value
+            if type_value:
+                info["type"] = type_value
+    else:
+        bullet_style = _docx_extract_bullet_style(lvl_text)
+        if bullet_style:
+            info["css"] = bullet_style
+        else:
+            info.setdefault("css", "disc")
+    return info
+
+
+def _docx_build_numbering_map(path: Path) -> Dict[int, Dict[int, Dict[str, Any]]]:
+    mapping: Dict[int, Dict[int, Dict[str, Any]]] = {}
+    try:
+        with ZipFile(path) as archive:
+            data = archive.read("word/numbering.xml")
+    except (KeyError, FileNotFoundError):
+        return mapping
+    try:
+        root = ET.fromstring(data)
+    except ET.ParseError:
+        return mapping
+    abstract_defs: Dict[str, Dict[int, Dict[str, Any]]] = {}
+    for abstract in root.findall("w:abstractNum", DOCX_NS_MAP):
+        abs_id = abstract.get(f"{DOCX_W}abstractNumId")
+        if abs_id is None:
+            continue
+        levels: Dict[int, Dict[str, Any]] = {}
+        for lvl in abstract.findall("w:lvl", DOCX_NS_MAP):
+            ilvl = lvl.get(f"{DOCX_W}ilvl")
+            if ilvl is None:
+                continue
+            try:
+                level_index = int(ilvl)
+            except (TypeError, ValueError):
+                continue
+            level_info = _docx_numbering_level_info(lvl)
+            if level_info:
+                levels[level_index] = level_info
+        if levels:
+            abstract_defs[abs_id] = levels
+    for num in root.findall("w:num", DOCX_NS_MAP):
+        num_id = num.get(f"{DOCX_W}numId")
+        if num_id is None:
+            continue
+        abstract_ref_elem = num.find("w:abstractNumId", DOCX_NS_MAP)
+        if abstract_ref_elem is None:
+            continue
+        abstract_ref = abstract_ref_elem.get(f"{DOCX_W}val")
+        if abstract_ref is None:
+            continue
+        base_levels = abstract_defs.get(abstract_ref, {})
+        levels: Dict[int, Dict[str, Any]] = {
+            level: dict(info) for level, info in base_levels.items()
+        }
+        for override in num.findall("w:lvlOverride", DOCX_NS_MAP):
+            ilvl = override.get(f"{DOCX_W}ilvl")
+            if ilvl is None:
+                continue
+            try:
+                level_index = int(ilvl)
+            except (TypeError, ValueError):
+                continue
+            level_info = dict(levels.get(level_index, {}))
+            start_override = override.find("w:startOverride", DOCX_NS_MAP)
+            if start_override is not None:
+                start_val = start_override.get(f"{DOCX_W}val")
+                if start_val is not None:
+                    try:
+                        level_info["start"] = int(start_val)
+                    except (TypeError, ValueError):
+                        pass
+            lvl = override.find("w:lvl", DOCX_NS_MAP)
+            if lvl is not None:
+                merged = _docx_numbering_level_info(lvl)
+                if merged:
+                    level_info.update(merged)
+            if level_info:
+                levels[level_index] = level_info
+        try:
+            num_id_int = int(num_id)
+        except (TypeError, ValueError):
+            continue
+        if levels:
+            mapping[num_id_int] = levels
+    return mapping
+
+
+def _docx_numbering_level(
+    numbering_map: Dict[int, Dict[int, Dict[str, Any]]],
+    num_id: int,
+    level: int,
+) -> Dict[str, Any]:
+    base = numbering_map.get(num_id, {}).get(level, {})
+    info: Dict[str, Any] = dict(base)
+    info["num_id"] = num_id
+    info["level"] = level
+    num_fmt = info.get("num_fmt")
+    if isinstance(num_fmt, str):
+        info["num_fmt"] = num_fmt.lower()
+    ordered = info.get("ordered")
+    if ordered is None:
+        fmt = info.get("num_fmt")
+        ordered = fmt not in (None, "bullet", "none")
+        info["ordered"] = ordered
+    if info.get("css") is None:
+        if info.get("ordered"):
+            fmt = info.get("num_fmt")
+            style_info = DOCX_NUMFMT_STYLE_MAP.get(fmt or "") if fmt else None
+            if style_info and style_info.get("css"):
+                info["css"] = style_info["css"]
+            else:
+                info["css"] = "decimal"
+        else:
+            info["css"] = "disc"
+    if info.get("ordered") and info.get("type") is None:
+        fmt = info.get("num_fmt")
+        style_info = DOCX_NUMFMT_STYLE_MAP.get(fmt or "") if fmt else None
+        if style_info and style_info.get("type"):
+            info["type"] = style_info["type"]
+    if info.get("start") is not None:
+        try:
+            info["start"] = int(info["start"])
+        except (TypeError, ValueError):
+            info["start"] = None
+    return info
+
+
+def _docx_list_info(paragraph, numbering_map) -> Optional[Dict[str, Any]]:
+    if paragraph is None or getattr(paragraph, "_p", None) is None:
+        return None
+    p = paragraph._p
+    pPr = getattr(p, "pPr", None)
+    if pPr is None:
+        return None
+    numPr = getattr(pPr, "numPr", None)
+    if numPr is None:
+        return None
+    num_id_obj = getattr(numPr, "numId", None)
+    if num_id_obj is None or getattr(num_id_obj, "val", None) is None:
+        return None
+    try:
+        num_id_val = int(num_id_obj.val)
+    except (TypeError, ValueError):
+        return None
+    ilvl_obj = getattr(numPr, "ilvl", None)
+    level_value = 0
+    if ilvl_obj is not None and getattr(ilvl_obj, "val", None) is not None:
+        try:
+            level_value = int(ilvl_obj.val)
+        except (TypeError, ValueError):
+            level_value = 0
+    info = _docx_numbering_level(numbering_map, num_id_val, level_value)
+    lvl_text = info.get("lvl_text")
+    if lvl_text is None:
+        base = numbering_map.get(num_id_val, {}).get(level_value, {})
+        if base.get("lvl_text") is not None:
+            info["lvl_text"] = base["lvl_text"]
+    return info
+
+
+def _docx_trim_list_stack(
+    html_parts: List[str], stack: List[Dict[str, Any]], target_length: int
+) -> None:
+    while len(stack) > target_length:
+        current = stack.pop()
+        if current.get("open_item"):
+            html_parts.append("</li>")
+            current["open_item"] = False
+        html_parts.append(f"</{current['tag']}>")
+
+
+def _docx_close_all_lists(html_parts: List[str], stack: List[Dict[str, Any]]) -> None:
+    _docx_trim_list_stack(html_parts, stack, 0)
+
+
+def _docx_open_list(
+    html_parts: List[str], info: Dict[str, Any], depth: int
+) -> Dict[str, Any]:
+    ordered = bool(info.get("ordered"))
+    tag = "ol" if ordered else "ul"
+    classes = ["docx-list", f"docx-list-level-{depth}"]
+    classes.append("docx-list--ordered" if ordered else "docx-list--bullet")
+    class_attr = " ".join(classes)
+    attr_parts = [f'class="{class_attr}"']
+    css_value = info.get("css")
+    style_attr = None
+    if css_value:
+        style_attr = html.escape("; ".join([f"list-style-type: {css_value}"]), quote=True)
+        attr_parts.append(f'style="{style_attr}"')
+    type_value = info.get("type")
+    if ordered and type_value:
+        attr_parts.append(f'type="{html.escape(str(type_value), quote=True)}"')
+    start_value = info.get("start")
+    if ordered and isinstance(start_value, int) and start_value not in (0, 1):
+        attr_parts.append(f'start="{start_value}"')
+    attrs = " " + " ".join(attr_parts) if attr_parts else ""
+    html_parts.append(f"<{tag}{attrs}>")
+    entry = {
+        "tag": tag,
+        "num_id": info.get("num_id"),
+        "level": depth,
+        "ordered": ordered,
+        "css": css_value,
+        "type": type_value,
+        "open_item": False,
+    }
+    return entry
+
+
+def _docx_ensure_list_context(
+    html_parts: List[str],
+    stack: List[Dict[str, Any]],
+    info: Dict[str, Any],
+    numbering_map: Dict[int, Dict[int, Dict[str, Any]]],
+) -> Dict[str, Any]:
+    target_length = info.get("level", 0) + 1
+    _docx_trim_list_stack(html_parts, stack, target_length)
+    while len(stack) < target_length:
+        depth = len(stack)
+        level_info = _docx_numbering_level(numbering_map, info.get("num_id", 0), depth)
+        if depth == info.get("level"):
+            level_info.update({k: v for k, v in info.items() if v is not None})
+        if stack:
+            parent = stack[-1]
+            if not parent.get("open_item"):
+                parent_classes = [
+                    "docx-list-item",
+                    f"docx-list-item--level-{parent['level']}",
+                ]
+                parent_classes.append(
+                    "docx-list-item--ordered" if parent.get("ordered") else "docx-list-item--bullet"
+                )
+                html_parts.append(
+                    f"<li class=\"{' '.join(parent_classes)}\">&nbsp;"
+                )
+                parent["open_item"] = True
+        entry = _docx_open_list(html_parts, level_info, depth)
+        stack.append(entry)
+    current = stack[-1]
+    if (
+        current.get("num_id") != info.get("num_id")
+        or current.get("ordered") != info.get("ordered")
+        or current.get("css") != info.get("css")
+        or current.get("type") != info.get("type")
+    ):
+        if current.get("open_item"):
+            html_parts.append("</li>")
+            current["open_item"] = False
+        html_parts.append(f"</{current['tag']}>")
+        stack.pop()
+        entry = _docx_open_list(html_parts, info, info.get("level", 0))
+        stack.append(entry)
+        current = entry
+    return current
+
+
+def _docx_start_list_item(
+    html_parts: List[str], current: Dict[str, Any], info: Dict[str, Any], content: str
+) -> None:
+    if current.get("open_item"):
+        html_parts.append("</li>")
+        current["open_item"] = False
+    text = content or "&nbsp;"
+    classes = ["docx-list-item", f"docx-list-item--level-{info.get('level', 0)}"]
+    classes.append(
+        "docx-list-item--ordered" if info.get("ordered") else "docx-list-item--bullet"
+    )
+    html_parts.append(f"<li class=\"{' '.join(classes)}\">{text}")
+    current["open_item"] = True
+
+
 def extract_docx_paragraphs(path: Path) -> List[str]:
     paragraphs: List[str] = []
     if DocxDocument is not None:
@@ -766,33 +1116,6 @@ def _docx_run_to_html(run, defaults: Optional[dict] = None) -> str:
     if italic:
         text = f"<em>{text}</em>"
     return text
-
-
-def _docx_list_level(paragraph) -> Optional[int]:
-    if paragraph is None or getattr(paragraph, "_p", None) is None:
-        return None
-    p = paragraph._p
-    pPr = getattr(p, "pPr", None)
-    if pPr is None:
-        return None
-    numPr = getattr(pPr, "numPr", None)
-    if numPr is None:
-        return None
-    ilvl = getattr(numPr, "ilvl", None)
-    if ilvl is not None and getattr(ilvl, "val", None) is not None:
-        try:
-            return int(ilvl.val)
-        except (TypeError, ValueError):
-            return 0
-    return 0
-
-
-def _docx_close_lists(html_parts: List[str], stack: List[int], target: int = 0) -> None:
-    while len(stack) > target:
-        html_parts.append("</ul>")
-        stack.pop()
-
-
 def _docx_alignment_class(paragraph) -> str:
     if WD_ALIGN_PARAGRAPH is None:
         return ""
@@ -855,8 +1178,9 @@ def render_docx_html(path: Path) -> str:
         return ""
 
     html_parts: List[str] = []
-    list_stack: List[int] = []
+    list_stack: List[Dict[str, Any]] = []
     defaults = _docx_document_defaults(document)
+    numbering_map = _docx_build_numbering_map(path)
 
     paragraphs: Sequence = getattr(document, "paragraphs", [])
     tables: Sequence = getattr(document, "tables", [])
@@ -878,7 +1202,7 @@ def render_docx_html(path: Path) -> str:
                 except StopIteration:
                     table = None
             if table is not None:
-                _docx_close_lists(html_parts, list_stack, 0)
+                _docx_close_all_lists(html_parts, list_stack)
                 table_html = _docx_render_table(table, defaults)
                 if table_html:
                     html_parts.append(table_html)
@@ -893,29 +1217,38 @@ def render_docx_html(path: Path) -> str:
             raw_text = html.escape(paragraph.text or "")
             raw_text = raw_text.replace("\n", "<br />")
             paragraph_html = _docx_apply_defaults(raw_text, defaults)
-        paragraph_html = paragraph_html.replace("\n", "<br />").strip()
-        if not paragraph_html:
-            continue
+        paragraph_html = paragraph_html.replace("\n", "<br />")
+        paragraph_text = paragraph_html.strip()
         style = getattr(paragraph, "style", None)
         style_name = (getattr(style, "name", "") or "").lower()
         if style_name.startswith("heading"):
-            _docx_close_lists(html_parts, list_stack, 0)
+            if not paragraph_text:
+                continue
+            _docx_close_all_lists(html_parts, list_stack)
             level = _docx_heading_level(style_name)
-            html_parts.append(f"<h{level}>{paragraph_html}</h{level}>")
+            html_parts.append(f"<h{level}>{paragraph_text}</h{level}>")
             continue
-        list_level = _docx_list_level(paragraph)
-        if list_level is not None:
-            while len(list_stack) <= list_level:
-                html_parts.append("<ul class=\"docx-list\">")
-                list_stack.append(len(list_stack))
-            _docx_close_lists(html_parts, list_stack, list_level + 1)
-            html_parts.append(f"<li>{paragraph_html or '&nbsp;'}</li>")
+        list_info = _docx_list_info(paragraph, numbering_map)
+        if list_info is not None:
+            current_list = _docx_ensure_list_context(
+                html_parts, list_stack, list_info, numbering_map
+            )
+            _docx_start_list_item(
+                html_parts,
+                current_list,
+                list_info,
+                paragraph_html if paragraph_text else "",
+            )
             continue
-        _docx_close_lists(html_parts, list_stack, 0)
+        if not paragraph_text:
+            continue
+        _docx_close_all_lists(html_parts, list_stack)
         alignment_class = _docx_alignment_class(paragraph)
-        html_parts.append(f"<p class=\"docx-paragraph{alignment_class}\">{paragraph_html}</p>")
+        html_parts.append(
+            f"<p class=\"docx-paragraph{alignment_class}\">{paragraph_text}</p>"
+        )
 
-    _docx_close_lists(html_parts, list_stack, 0)
+    _docx_close_all_lists(html_parts, list_stack)
     return "".join(html_parts)
 
 
