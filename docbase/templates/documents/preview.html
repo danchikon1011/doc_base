@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ document.title }} · Просмотр</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}" />
+    <style>
+      body {
+        background: var(--bs-body-bg, #f8f9fa);
+        margin: 0;
+        font-family: "Inter", "Segoe UI", sans-serif;
+        color: var(--bs-body-color, #212529);
+      }
+      .preview-wrapper {
+        padding: 1.5rem;
+        height: 100vh;
+        box-sizing: border-box;
+        overflow: auto;
+      }
+      .preview-wrapper .document-preview,
+      .preview-wrapper .document-content,
+      .preview-wrapper .document-slides,
+      .preview-wrapper .document-spreadsheet {
+        background: #fff;
+        border-radius: 0.75rem;
+        box-shadow: 0 1rem 3rem rgba(15, 23, 42, 0.12);
+        padding: 1.5rem;
+      }
+      .preview-wrapper iframe,
+      .preview-wrapper object,
+      .preview-wrapper embed {
+        width: 100%;
+        height: calc(100vh - 3rem);
+        border: none;
+        border-radius: 0.75rem;
+      }
+      .preview-empty {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 100%;
+        color: #6c757d;
+        font-size: 0.95rem;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="preview-wrapper">
+      {% if preview.kind == 'pdf' %}
+      <iframe src="{{ url_for('documents.serve_file', slug=document.slug) }}" title="{{ version.filename or document.title }}"></iframe>
+      {% elif preview.kind == 'docx' %}
+      <div class="document-content document-content--docx">{{ preview.html | safe }}</div>
+      {% elif preview.kind == 'paragraphs' %}
+      <div class="document-content document-content--rich">
+        {% if preview.paragraphs %}
+          {% for paragraph in preview.paragraphs %}
+          <p class="mb-2">{{ paragraph | urlize }}</p>
+          {% endfor %}
+        {% else %}
+        <div class="preview-empty">Предпросмотр текста отсутствует.</div>
+        {% endif %}
+      </div>
+      {% elif preview.kind == 'slides' %}
+      <div class="document-slides">
+        {% if preview.slides %}
+          {% for slide in preview.slides %}
+          <div class="slide-card mb-3">
+            <div class="slide-header text-muted small">Слайд {{ loop.index }}</div>
+            {% if slide.title %}
+            <div class="slide-title fw-semibold mb-2">{{ slide.title }}</div>
+            {% endif %}
+            <div class="slide-body">{{ (slide.html or '') | safe }}</div>
+          </div>
+          {% endfor %}
+        {% else %}
+        <div class="preview-empty">Предпросмотр презентации недоступен.</div>
+        {% endif %}
+      </div>
+      {% elif preview.kind == 'sheets' %}
+      <div class="document-spreadsheet">
+        {% if preview.sheets %}
+          {% for sheet in preview.sheets %}
+          <div class="sheet-wrapper mb-4">
+            <div class="fw-semibold mb-2">{{ sheet.name }}</div>
+            <div class="table-responsive">
+              <table class="table table-sm table-bordered mb-0">
+                <tbody>
+                  {% for row in sheet.rows %}
+                  <tr>
+                    {% for cell in row %}
+                    <td>{{ cell }}</td>
+                    {% endfor %}
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          {% endfor %}
+        {% else %}
+        <div class="preview-empty">Предпросмотр таблицы недоступен.</div>
+        {% endif %}
+      </div>
+      {% elif preview.kind == 'text' %}
+      <article class="document-content">{{ preview.text | e | urlize }}</article>
+      {% else %}
+      <div class="preview-empty">Предпросмотр этого формата пока недоступен.</div>
+      {% endif %}
+    </div>
+  </body>
+</html>
