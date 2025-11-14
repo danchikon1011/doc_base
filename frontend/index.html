@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <title>DocuFlow</title>
+  <link rel="stylesheet" href="/static/css/styles.css" />
+</head>
+<body>
+  <header>
+    <h1>DocuFlow — система согласования документов</h1>
+    <nav>
+      <button id="nav-login">Войти</button>
+      <button id="nav-documents">Документы</button>
+      <button id="nav-upload">Новый документ</button>
+      <button id="nav-smart-search">Умный поиск</button>
+      <button id="nav-admin">Администрирование</button>
+    </nav>
+  </header>
+
+  <main>
+    <section id="login-view" class="view card hidden">
+      <h2>Вход</h2>
+      <form id="login-form">
+        <label>E-mail</label>
+        <input name="email" type="email" required />
+        <label>Пароль</label>
+        <input name="password" type="password" required />
+        <button class="primary" type="submit">Войти</button>
+      </form>
+    </section>
+
+    <section id="documents-view" class="view hidden">
+      <div class="card">
+        <form id="search-form">
+          <input name="search" placeholder="Поиск документов" />
+          <button class="primary" type="submit">Найти</button>
+        </form>
+      </div>
+      <div id="documents-list"></div>
+    </section>
+
+    <section id="document-detail-view" class="view hidden">
+      <div id="document-detail"></div>
+    </section>
+
+    <section id="upload-view" class="view hidden">
+      <div class="card">
+        <h2>Новый документ</h2>
+        <form id="upload-form">
+          <label>Название</label>
+          <input name="title" required />
+          <label>Идентификатор отдела</label>
+          <input name="department_id" type="number" />
+          <label>Уровень доступа</label>
+          <select name="access_level">
+            <option value="owner">Только владелец</option>
+            <option value="department">Отдел</option>
+            <option value="custom">Выбранные пользователи</option>
+            <option value="organization">Вся организация</option>
+          </select>
+          <label>ID пользователей для доступа (через запятую)</label>
+          <input name="shared_user_ids" />
+          <label>ID согласующих (через запятую)</label>
+          <input name="reviewers" />
+          <label>Дополнительные метаданные (JSON)</label>
+          <textarea name="metadata"></textarea>
+          <label>Файл документа</label>
+          <input name="file" type="file" accept=".docx,.pptx,.xlsx,.pdf" required />
+          <button class="primary" type="submit">Загрузить</button>
+        </form>
+      </div>
+    </section>
+
+    <section id="smart-search-view" class="view hidden">
+      <div class="card">
+        <h2>Задать вопрос</h2>
+        <form id="smart-search-form">
+          <input name="question" placeholder="Например, статус договора с партнером Х" />
+          <button class="primary" type="submit">Спросить</button>
+        </form>
+      </div>
+      <div id="smart-search-results"></div>
+    </section>
+
+    <section id="admin-view" class="view hidden">
+      <div class="card">
+        <h2>Пользователи</h2>
+        <ul id="admin-users"></ul>
+      </div>
+      <div class="card">
+        <h2>Роли</h2>
+        <ul id="admin-roles"></ul>
+      </div>
+      <div class="card">
+        <h2>Отделы</h2>
+        <ul id="admin-departments"></ul>
+      </div>
+      <div class="card">
+        <h2>Журнал действий</h2>
+        <ul id="admin-logs"></ul>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
