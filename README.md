@@ -41,7 +41,7 @@ docker compose up --build
 ```bash
 pip install -r backend/requirements.txt
 export $(grep -v '^#' .env | xargs)  # загрузка переменных окружения
-uvicorn app.main:app --reload --app-dir backend/app
+uvicorn app.main:app --reload --app-dir backend
 ```
 
 ### 4. Создание тестовых данных
