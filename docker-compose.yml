@@ -1,0 +1,31 @@
+version: '3.8'
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: docflow
+      POSTGRES_PASSWORD: docflow
+      POSTGRES_DB: docflow
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+  backend:
+    build: ./backend
+    depends_on:
+      - db
+    environment:
+      POSTGRES_USER: docflow
+      POSTGRES_PASSWORD: docflow
+      POSTGRES_DB: docflow
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      SECRET_KEY: super-secret-change-me
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/app:/app/app
+      - ./storage:/app/storage
+      - ./frontend:/app/frontend
+volumes:
+  pgdata:
