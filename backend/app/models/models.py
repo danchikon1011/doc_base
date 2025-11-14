@@ -113,14 +113,6 @@ class Document(Base):
     access_rules = relationship("DocumentAccessRule", back_populates="document", cascade="all, delete-orphan")
     shared_users = relationship("User", secondary=shared_document_users)
 
-    @property
-    def metadata(self):
-        return self.metadata_json or {}
-
-    @metadata.setter
-    def metadata(self, value):
-        self.metadata_json = value or {}
-
 
 class DocumentVersion(Base):
     __tablename__ = "document_versions"
@@ -190,3 +182,14 @@ class AuditLog(Base):
 
     user = relationship("User")
     document = relationship("Document")
+
+
+def _document_metadata_getter(self):
+    return self.metadata_json or {}
+
+
+def _document_metadata_setter(self, value):
+    self.metadata_json = value or {}
+
+
+Document.metadata = property(_document_metadata_getter, _document_metadata_setter)
