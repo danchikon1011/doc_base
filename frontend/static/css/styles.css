@@ -1,0 +1,108 @@
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #f5f7fb;
+    margin: 0;
+    color: #1f2933;
+}
+
+header {
+    background-color: #2d6cdf;
+    color: white;
+    padding: 16px 32px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+main {
+    padding: 24px 32px;
+}
+
+nav button {
+    margin-right: 12px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    border: none;
+    background: #fff;
+    color: #2d6cdf;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+nav button.active {
+    background-color: #173f9a;
+    color: white;
+}
+
+.card {
+    background: white;
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 16px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+
+input, select, textarea {
+    width: 100%;
+    padding: 8px;
+    margin: 6px 0 12px;
+    border-radius: 6px;
+    border: 1px solid #d0d7e2;
+}
+
+button.primary {
+    background-color: #2d6cdf;
+    color: white;
+    border: none;
+    padding: 10px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+button.secondary {
+    background-color: #edf2fb;
+    color: #2d6cdf;
+    border: none;
+    padding: 10px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.hidden {
+    display: none;
+}
+
+.table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.table th, .table td {
+    padding: 8px;
+    border-bottom: 1px solid #e5e9f2;
+}
+
+.badge {
+    display: inline-block;
+    padding: 4px 8px;
+    border-radius: 12px;
+    background-color: #f0f4ff;
+    color: #2d6cdf;
+    font-size: 12px;
+}
+
+.print-layout {
+    padding: 24px;
+}
+
+@media print {
+    header, nav, .no-print {
+        display: none;
+    }
+    body {
+        background: white;
+    }
+    .print-layout {
+        padding: 0;
+    }
+}
